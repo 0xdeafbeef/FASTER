@@ -12,20 +12,17 @@ extern "C" {
 #endif
 
 #include <stddef.h>
-
-  typedef struct fasterkv_t fasterkv_t;
-  typedef struct fasterkv_disk_t fasterkv_disk_t;
-  typedef struct fasterkv_key_t fasterkv_key_t;
-  typedef struct fasterkv_value_t fasterkv_value_t;
+  typedef struct faster_t faster_t;
 
   // Operations
-  fasterkv_t* fasterkv_create();
-  void fasterkv_destroy(fasterkv_t *store);
+  faster_t* faster_open_with_disk(const char* storage, const size_t key_space);
+  void faster_upsert(faster_t* faster_t);
+  char* faster_read(faster_t* faster_t, const char* key);
+  void faster_destroy(faster_t* faster_t);
 
 #ifdef __cplusplus
 }  // extern "C"
 #endif
-
 
 #endif  /* C_INTERFACE_FASTER_C_H_ */
 
