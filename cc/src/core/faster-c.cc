@@ -140,6 +140,53 @@ extern "C" {
     uint64_t input_;
   };
 
+  class RmwContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    RmwContext(uint64_t key, uint64_t incr)
+      : key_{ key }
+      , incr_{ incr } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    RmwContext(const RmwContext& other)
+      : key_{ other.key_ }
+      , incr_{ other.incr_ } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    const Key& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+
+    /// Initial, non-atomic, and atomic RMW methods.
+    inline void RmwInitial(value_t& value) {
+      value.value_ = incr_;
+    }
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
+      value.value_ = old_value.value_ + incr_;
+    }
+    inline bool RmwAtomic(value_t& value) {
+      value.atomic_value_.fetch_add(incr_);
+      return true;
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+    uint64_t incr_;
+  };
+
   
   typedef FASTER::environment::QueueIoHandler handler_t;
   typedef FASTER::device::FileSystemDisk<handler_t, 1073741824L> disk_t;
@@ -148,49 +195,46 @@ extern "C" {
 
   struct faster_t { store_t* obj; };
 
-  faster_t* faster_open_with_disk(const char* storage, const size_t key_space) {
+  faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage) {
     faster_t* res = new faster_t;
     std::experimental::filesystem::create_directory(storage);
-    res->obj= new store_t { key_space, 17179869184, storage };
+    res->obj= new store_t { table_size, log_size, storage };
     return res;
   }
 
-  void faster_upsert(faster_t* faster_t) {
+  void faster_upsert(faster_t* faster_t, const uint64_t key, const uint64_t value) {
     store_t* store = faster_t->obj;
-    uint64_t value = 42;
-    uint64_t key = 10;
-
-    store->StartSession();
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
         assert(result == Status::Ok);
     };
-    UpsertContext context{ key, value };
-    store->Upsert(context, callback, 1);
 
-    store->CompletePending(true);
-    store->StopSession();
+    UpsertContext context { key, value };
+    store->Upsert(context, callback, 1);
   }
 
-  char* faster_read(faster_t* faster_t, const char* key) {
+  uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, const uint64_t value) {
+    store_t* store = faster_t->obj;
+
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<RmwContext> context{ ctxt };
+    };
+
+    RmwContext context{ key, value};
+    Status result = store->Rmw(context, callback, 1);
+    return static_cast<uint8_t>(result);
+  }
+
+  uint8_t faster_read(faster_t* faster_t, const uint64_t key) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
     };
 
-    uint64_t key_ = 10;
-    ReadContext context{ key_};
+    ReadContext context {key};
     Status result = store->Read(context, callback, 1);
-
-    if (result == Status::Ok) {
-      printf("OK\n");
-    } else if (result == Status::NotFound) {
-      printf("Not Found\n");
-    }
-
-    char* s = "hej";
-    return s;
+    return static_cast<uint8_t>(result);
   }
 
   void faster_destroy(faster_t *faster_t) {
@@ -200,6 +244,16 @@ extern "C" {
     delete faster_t->obj;
     delete faster_t;
   }
+
+  uint64_t faster_size(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return -1;
+    } else {
+      store_t* store = faster_t->obj;
+      return store->Size();
+    }
+  }
+
 
 
 } // extern "C"
