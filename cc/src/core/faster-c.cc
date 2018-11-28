@@ -83,8 +83,12 @@ extern "C" {
       return key_;
     }
 
-    inline void Get(const value_t& value) { }
-    inline void GetAtomic(const value_t& value) { }
+    inline void Get(const value_t& value) { 
+      //*result_ = value.value_;
+    }
+    inline void GetAtomic(const value_t& value) {
+      //*result_ = value.atomic_value_;
+    }
 
    protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
@@ -94,6 +98,7 @@ extern "C" {
 
    private:
     Key key_;
+    uint64_t* result_;
   };
 
   class UpsertContext : public IAsyncContext {
@@ -195,6 +200,7 @@ extern "C" {
 
   struct faster_t { store_t* obj; };
 
+
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage) {
     faster_t* res = new faster_t;
     std::experimental::filesystem::create_directory(storage);
@@ -225,16 +231,28 @@ extern "C" {
     return static_cast<uint8_t>(result);
   }
 
-  uint8_t faster_read(faster_t* faster_t, const uint64_t key) {
+  uint8_t faster_read(faster_t* faster_t, const uint64_t key, faster_callback*  _callback) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
     };
 
+    //TODO
+    //faster_result r = faster_result { "hej" };
     ReadContext context {key};
     Status result = store->Read(context, callback, 1);
     return static_cast<uint8_t>(result);
+  }
+
+  bool faster_checkpoint(faster_t* faster_t, const char* token) {
+    store_t* store = faster_t->obj;
+    std::string _token(token);
+    Guid guid = Guid::Parse(_token);
+    auto callback = [](Status result, uint64_t persistent_serial_num) {
+      assert(result == Status::Ok);
+    };
+    return store->Checkpoint(nullptr, callback, guid);
   }
 
   void faster_destroy(faster_t *faster_t) {
@@ -254,6 +272,43 @@ extern "C" {
     }
   }
 
+  // Hmm, this might be wrong..
+  void faster_complete_pending(faster_t* faster_t) {
+    if (faster_t == NULL)
+      return;
+
+    store_t* store = faster_t->obj;
+    store->CompletePending(true);
+  }
+
+
+  // It is up to the caller to deallocate the faster_recover_result* struct
+  faster_recover_result* faster_recover(faster_t* faster_t, const char* index_token, const char* hybrid_log_token) {
+    if (faster_t == NULL) {
+      return NULL;
+    } else {
+      store_t* store = faster_t->obj;
+      uint32_t ver;
+      std::vector<Guid> _session_ids;
+
+      std::string index_str(index_token);
+      std::string hybrid_str(hybrid_log_token);
+      //TODO: error handling
+      Guid index_guid = Guid::Parse(index_str);
+      Guid hybrid_guid = Guid::Parse(hybrid_str);
+      Status sres = store->Recover(index_guid, hybrid_guid, ver, _session_ids);
+
+      uint8_t status_result = static_cast<uint8_t>(sres);
+      faster_recover_result* res = new faster_recover_result;
+
+      res->result = new (uint8_t);
+      *res->result = status_result;
+      res->version = new (uint32_t);
+      *res->version = ver;
+      res->session_ids = NULL; //TODO
+      return res;
+    }
+  }
 
 
 } // extern "C"
