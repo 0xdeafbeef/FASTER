@@ -302,10 +302,69 @@ extern "C" {
       faster_recover_result* res = (faster_recover_result*) malloc(sizeof(faster_recover_result));
       res->status= status_result;
       res->version = ver;
-      res->session_ids = NULL; //TODO
+    
+      int ids_total = _session_ids.size();
+      res->session_ids_count = ids_total;
+      int session_len = 37; // 36 + 1
+      res->session_ids = (char**) malloc(sizeof(char*));
+
+      for (int i = 0; i < ids_total; i++) {
+          res->session_ids[i] = (char*) malloc(session_len);
+      }
+
+      int counter = 0;
+      for (auto& id : _session_ids) {
+        strncpy(res->session_ids[counter], id.ToString().c_str(), session_len);
+        counter++;
+      }
+
       return res;
     }
   }
 
+  void faster_complete_pending(faster_t* faster_t, bool b) {
+    if (faster_t != NULL) {
+      store_t* store = faster_t->obj;
+      store->CompletePending(b);
+    }
+  }
+
+  // Thread-related
+  
+  const char* faster_start_session(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return NULL;
+    } else {
+      store_t* store = faster_t->obj;
+      Guid guid = store->StartSession();
+      return guid.ToString().c_str();
+    }
+
+  }
+
+  uint64_t faster_continue_session(faster_t* faster_t, const char* token) {
+    if (faster_t == NULL) {
+      return -1;
+    } else {
+      store_t* store = faster_t->obj;
+      std::string guid_str(token);
+      Guid guid = Guid::Parse(guid_str);
+      return store->ContinueSession(guid);
+    }
+  }
+
+  void faster_stop_session(faster_t* faster_t) {
+    if (faster_t != NULL) {
+      store_t* store = faster_t->obj;
+      store->StopSession();
+    }
+  }
+
+  void faster_refresh_session(faster_t* faster_t) {
+    if (faster_t != NULL) {
+      store_t* store = faster_t->obj;
+      store->Refresh();
+    }
+  }
 
 } // extern "C"

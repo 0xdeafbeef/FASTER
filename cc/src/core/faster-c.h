@@ -30,8 +30,15 @@ extern "C" {
   struct faster_recover_result {
     uint8_t status;
     uint32_t version;
-    const char** session_ids;
+    int session_ids_count;
+    char** session_ids;
   };
+
+  // Thread-related operations
+  const char* faster_start_session(faster_t* faster_t);
+  uint64_t faster_continue_session(faster_t* faster_t, const char* token);
+  void faster_stop_session(faster_t* faster_t);
+  void faster_refresh_session(faster_t* faster_t);
 
   // Operations
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage);
@@ -42,6 +49,7 @@ extern "C" {
   void faster_destroy(faster_t* faster_t);
   uint64_t faster_size(faster_t* faster_t);
   faster_recover_result* faster_recover(faster_t* faster_t, const char* index_token, const char* hybrid_log_token);
+  void faster_complete_pending(faster_t* faster_t, bool b);
   // TODO:
   // CheckpointIndex
   // CheckpointHybridLog
