@@ -1,5 +1,6 @@
 #include "c_test.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <assert.h>
 #include <inttypes.h>
 
@@ -25,10 +26,10 @@ int main() {
   assert(rmw == 0);
 
   // Read
-  uint8_t res = faster_read(store, 1, callback);
-  uint8_t resTwo = faster_read(store, 2, callback);
-  uint8_t resThree = faster_read(store, 3, callback);
-  uint8_t resFour = faster_read(store, 4, callback);
+  uint8_t res = faster_read(store, 1);
+  uint8_t resTwo = faster_read(store, 2);
+  uint8_t resThree = faster_read(store, 3);
+  uint8_t resFour = faster_read(store, 4);
 
   // Status: 0 == Ok, 2 == NotFound
   assert(res == 0);
@@ -40,20 +41,23 @@ int main() {
   uint64_t size = faster_size(store);
   printf("size: %" PRIu64 "\n", size);
 
-
-  const char* token = "d93caa62-bbcf-462b-99c7-9b1166dd4355\0";
   // Checkpoint
-  uint8_t cpr = faster_checkpoint(store, token);
-  printf("%d\n", cpr);
+  faster_checkpoint_result* checkpoint_res = faster_checkpoint(store);
+  printf("checked %d\n", checkpoint_res->checked);
+  printf("token %s\n", checkpoint_res->token);
 
-  faster_recover_result* recover_res = faster_recover(store, token, token);
-  printf("rec %d\n", *recover_res->result);
-  printf("version: %" PRIu32"\n", *recover_res->version);
+  char* recover_token = checkpoint_res->token;
 
+  faster_recover_result* recover_res = faster_recover(store, recover_token, recover_token);
+  printf("rec %d\n", recover_res->status);
+  printf("version: %" PRIu32"\n", recover_res->version);
+
+
+  free(checkpoint_res->token);
+  free(checkpoint_res);
   free(recover_res);
 
-  //faster_complete_pending(store);
-  // Free the resources tied to FASTER
+  // Free the resources tied to STORE
   faster_destroy(store);
   return 0;
 }
