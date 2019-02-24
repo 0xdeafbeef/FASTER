@@ -337,7 +337,9 @@ extern "C" {
     } else {
       store_t* store = faster_t->obj;
       Guid guid = store->StartSession();
-      return guid.ToString().c_str();
+      char* str = new char[37];
+      std::strcpy(str, guid.ToString().c_str());
+      return str;
     }
 
   }
