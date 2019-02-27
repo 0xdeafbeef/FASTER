@@ -69,15 +69,17 @@ extern "C" {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(uint64_t key, uint64_t* result)
+    ReadContext(uint64_t key, read_callback cb, void* target)
       : key_{ key } 
-      , result_ { result }  {
+      , cb_ { cb }
+      , target_ { target }  {
     }
 
     /// Copy (and deep-copy) constructor.
     ReadContext(const ReadContext& other)
       : key_{ other.key_ } 
-      , result_ { other.result_ }  {
+      , cb_ { other.cb_ }
+      , target_ { other.target_ }  {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -86,10 +88,10 @@ extern "C" {
     }
 
     inline void Get(const value_t& value) { 
-      //*result_ = value.value_;
+      cb_(target_, value.value_, Ok);
     }
     inline void GetAtomic(const value_t& value) {
-      //*result_ = value.atomic_value_.load();
+      cb_(target_, value.atomic_value_.load(), Ok);
     }
 
     uint64_t val() const {
@@ -104,7 +106,8 @@ extern "C" {
 
    private:
     Key key_;
-    uint64_t* result_;
+    read_callback cb_;
+    void* target_;
   };
 
   class UpsertContext : public IAsyncContext {
@@ -235,15 +238,20 @@ extern "C" {
     return static_cast<uint8_t>(result);
   }
 
-  uint8_t faster_read(faster_t* faster_t, const uint64_t key) {
+  uint8_t faster_read(faster_t* faster_t, const uint64_t key, read_callback cb, void* target) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context { ctxt };
     };
 
-    ReadContext context {key, NULL};
+    ReadContext context {key, cb, target};
     Status result = store->Read(context, callback, 1);
+
+    if (result == Status::NotFound) {
+      cb(target, 0, NotFound);
+    }
+
     return static_cast<uint8_t>(result);
   }
 
