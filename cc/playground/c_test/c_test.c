@@ -1,12 +1,13 @@
 #include "c_test.h"
+#include "core/faster-c.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <inttypes.h>
 
-
-void callback(void* func) {
-    printf("hej\n");
+void callback(void* func, uint64_t x, faster_status status) {
+  printf("%d\n", x);
 }
 
 
@@ -26,10 +27,10 @@ int main() {
   assert(rmw == 0);
 
   // Read
-  uint8_t res = faster_read(store, 1);
-  uint8_t resTwo = faster_read(store, 2);
-  uint8_t resThree = faster_read(store, 3);
-  uint8_t resFour = faster_read(store, 4);
+  uint8_t res = faster_read(store, 1, callback, NULL);
+  uint8_t resTwo = faster_read(store, 2, callback, NULL);
+  uint8_t resThree = faster_read(store, 3, callback, NULL);
+  uint8_t resFour = faster_read(store, 4, callback, NULL);
 
   // Status: 0 == Ok, 2 == NotFound
   assert(res == 0);
