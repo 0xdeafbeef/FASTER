@@ -31,7 +31,8 @@ extern "C" {
   };
   typedef enum faster_status faster_status;
 
-  typedef void (*read_callback)(void*, uint64_t, faster_status);
+  typedef void (*read_callback)(void*, const uint8_t*, uint64_t, faster_status);
+  typedef uint64_t (*rmw_callback)(const uint8_t*, uint64_t, uint8_t*, uint64_t, uint8_t*);
 
   typedef struct faster_checkpoint_result faster_checkpoint_result;
   struct faster_checkpoint_result {
@@ -55,8 +56,8 @@ extern "C" {
 
   // Operations
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage);
-  uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, const uint64_t value);
-  uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, const uint64_t value);
+  uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, uint8_t* value, uint64_t length);
+  uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, uint8_t* modification, const uint64_t length, rmw_callback cb);
   uint8_t faster_read(faster_t* faster_t, const uint64_t key, read_callback cb, void* target);
   faster_checkpoint_result* faster_checkpoint(faster_t* faster_t);
   void faster_destroy(faster_t* faster_t);

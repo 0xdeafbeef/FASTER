@@ -10,74 +10,149 @@
 extern "C" {
 
   class Key {
-   public:
-    Key(uint64_t key)
-      : key_{ key } {
+    public:
+      Key(uint64_t key)
+        : key_{ key } {
+      }
+
+      /// Methods and operators required by the (implicit) interface:
+      inline static constexpr uint32_t size() {
+        return static_cast<uint32_t>(sizeof(Key));
+      }
+      inline KeyHash GetHash() const {
+        return KeyHash{ Utility::GetHashCode(key_) };
+      }
+
+      /// Comparison operators.
+      inline bool operator==(const Key& other) const {
+        return key_ == other.key_;
+      }
+      inline bool operator!=(const Key& other) const {
+        return key_ != other.key_;
+      }
+
+    private:
+      uint64_t key_;
+  };
+
+  class ReadContext;
+  class UpsertContext;
+  class RmwContext;
+
+  class GenLock {
+  public:
+    GenLock()
+      : control_{ 0 } {
+    }
+    GenLock(uint64_t control)
+      : control_{ control } {
+    }
+    inline GenLock& operator=(const GenLock& other) {
+      control_ = other.control_;
+      return *this;
     }
 
-    /// Methods and operators required by the (implicit) interface:
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
+    union {
+      struct {
+        uint64_t gen_number : 62;
+        uint64_t locked : 1;
+        uint64_t replaced : 1;
+      };
+      uint64_t control_;
+    };
+  };
+
+  class AtomicGenLock {
+  public:
+    AtomicGenLock()
+      : control_{ 0 } {
     }
-    inline KeyHash GetHash() const {
-      return KeyHash{ Utility::GetHashCode(key_) };
+    AtomicGenLock(uint64_t control)
+      : control_{ control } {
     }
 
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
+    inline GenLock load() const {
+      return GenLock{ control_.load() };
     }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
+    inline void store(GenLock desired) {
+      control_.store(desired.control_);
     }
 
-   private:
-    uint64_t key_;
+    inline bool try_lock(bool& replaced) {
+      replaced = false;
+      GenLock expected{ control_.load() };
+      expected.locked = 0;
+      expected.replaced = 0;
+      GenLock desired{ expected.control_ };
+      desired.locked = 1;
+
+      if(control_.compare_exchange_strong(expected.control_, desired.control_)) {
+        return true;
+      }
+      if(expected.replaced) {
+        replaced = true;
+      }
+      return false;
+    }
+    inline void unlock(bool replaced) {
+      if(replaced) {
+        // Just turn off "locked" bit and increase gen number.
+        uint64_t sub_delta = ((uint64_t)1 << 62) - 1;
+        control_.fetch_sub(sub_delta);
+      } else {
+        // Turn off "locked" bit, turn on "replaced" bit, and increase gen number
+        uint64_t add_delta = ((uint64_t)1 << 63) - ((uint64_t)1 << 62) + 1;
+        control_.fetch_add(add_delta);
+      }
+    }
+
+  private:
+    std::atomic<uint64_t> control_;
   };
 
   class Value {
-   public:
+  public:
     Value()
-      : value_{ 0 } {
+      : gen_lock_{ 0 }
+      , size_{ 0 }
+      , length_{ 0 } {
     }
 
-    Value(const Value& other)
-      : value_{ other.value_ } {
-    }
-
-    Value(uint64_t value)
-      : value_{ value } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
+    inline uint32_t size() const {
+      return size_;
     }
 
     friend class ReadContext;
     friend class UpsertContext;
     friend class RmwContext;
 
-   private:
-    union {
-      uint64_t value_;
-      std::atomic<uint64_t> atomic_value_;
-    };
+  private:
+    AtomicGenLock gen_lock_;
+    uint64_t size_;
+    uint64_t length_;
+
+    inline const uint8_t* buffer() const {
+      return reinterpret_cast<const uint8_t*>(this + 1);
+    }
+    inline uint8_t* buffer() {
+      return reinterpret_cast<uint8_t*>(this + 1);
+    }
   };
 
   class ReadContext : public IAsyncContext {
-   public:
+  public:
     typedef Key key_t;
     typedef Value value_t;
 
     ReadContext(uint64_t key, read_callback cb, void* target)
-      : key_{ key } 
+      : key_{ key }
       , cb_ { cb }
       , target_ { target }  {
     }
 
     /// Copy (and deep-copy) constructor.
     ReadContext(const ReadContext& other)
-      : key_{ other.key_ } 
+      : key_{ other.key_ }
       , cb_ { other.cb_ }
       , target_ { other.target_ }  {
     }
@@ -87,118 +162,171 @@ extern "C" {
       return key_;
     }
 
-    inline void Get(const value_t& value) { 
-      cb_(target_, value.value_, Ok);
+    inline void Get(const Value& value) {
+      cb_(target_, value.buffer(), value.length_, Ok);
     }
-    inline void GetAtomic(const value_t& value) {
-      cb_(target_, value.atomic_value_.load(), Ok);
+    inline void GetAtomic(const Value& value) {
+      GenLock before, after;
+      const uint8_t* buffer;
+      uint64_t length;
+      do {
+        before = value.gen_lock_.load();
+        buffer = value.buffer();
+        length = value.length_;
+        after = value.gen_lock_.load();
+      } while(before.gen_number != after.gen_number);
+      cb_(target_, buffer, length, Ok);
     }
 
-    uint64_t val() const {
-      return 1;
-    }
-
-   protected:
+  protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
 
-   private:
+  private:
     Key key_;
     read_callback cb_;
     void* target_;
   };
 
   class UpsertContext : public IAsyncContext {
-   public:
+  public:
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(uint64_t key, uint64_t input)
+    UpsertContext(uint64_t key, uint8_t* input, uint64_t length)
       : key_{ key }
-      , input_{ input } {
+      , input_{ input }
+      , length_{ length } {
     }
 
     /// Copy (and deep-copy) constructor.
     UpsertContext(const UpsertContext& other)
       : key_{ other.key_ }
-      , input_{ other.input_ } {
+      , input_{ other.input_ }
+      , length_{ other.length_ } {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
     inline const Key& key() const {
       return key_;
     }
-    inline static constexpr uint32_t value_size() {
-      return sizeof(value_t);
+    inline uint32_t value_size() const {
+      return sizeof(Value) + length_;
     }
-
     /// Non-atomic and atomic Put() methods.
-    inline void Put(value_t& value) {
-      value.value_ = input_;
+    inline void Put(Value& value) {
+      value.gen_lock_.store(0);
+      value.size_ = sizeof(Value) + length_;
+      value.length_ = length_;
+      std::memcpy(value.buffer(), input_, length_);
     }
-    inline bool PutAtomic(value_t& value) {
-      value.atomic_value_.store(input_);
+    inline bool PutAtomic(Value& value) {
+      bool replaced;
+      while(!value.gen_lock_.try_lock(replaced) && !replaced) {
+        std::this_thread::yield();
+      }
+      if(replaced) {
+        // Some other thread replaced this record.
+        return false;
+      }
+      if(value.size_ < sizeof(Value) + length_) {
+        // Current value is too small for in-place update.
+        value.gen_lock_.unlock(true);
+        return false;
+      }
+      // In-place update overwrites length and buffer, but not size.
+      value.length_ = length_;
+      std::memcpy(value.buffer(), input_, length_);
+      value.gen_lock_.unlock(false);
       return true;
     }
 
-   protected:
+  protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
 
-   private:
+  private:
     Key key_;
-    uint64_t input_;
+    uint8_t* input_;
+    uint64_t length_;
   };
 
   class RmwContext : public IAsyncContext {
-   public:
+  public:
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(uint64_t key, uint64_t incr)
+    RmwContext(uint64_t key, uint8_t* modification, uint64_t length, rmw_callback cb)
       : key_{ key }
-      , incr_{ incr } {
+      , modification_{ modification }
+      , length_{ length }
+      , cb_{ cb } {
     }
 
     /// Copy (and deep-copy) constructor.
     RmwContext(const RmwContext& other)
       : key_{ other.key_ }
-      , incr_{ other.incr_ } {
+      , modification_{ other.modification_ }
+      , length_{ other.length_ }
+      , cb_{ other.cb_ } {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    const Key& key() const {
+    inline const Key& key() const {
       return key_;
     }
-    inline static constexpr uint32_t value_size() {
-      return sizeof(value_t);
+    inline uint32_t value_size() const {
+      return sizeof(value_t) + length_;
     }
 
-    /// Initial, non-atomic, and atomic RMW methods.
-    inline void RmwInitial(value_t& value) {
-      value.value_ = incr_;
+    inline void RmwInitial(Value& value) {
+      value.gen_lock_.store(GenLock{});
+      value.size_ = sizeof(Value) + length_;
+      value.length_ = length_;
+      std::memcpy(value.buffer(), modification_, length_);
     }
-    inline void RmwCopy(const value_t& old_value, value_t& value) {
-      value.value_ = old_value.value_ + incr_;
+    inline void RmwCopy(const Value& old_value, Value& value) {
+      value.gen_lock_.store(GenLock{});
+      value.length_ = cb_(old_value.buffer(), old_value.length_, modification_, length_, value.buffer());
+      value.size_ = sizeof(Value) + value.length_;
     }
-    inline bool RmwAtomic(value_t& value) {
-      value.atomic_value_.fetch_add(incr_);
+    inline bool RmwAtomic(Value& value) {
+      bool replaced;
+      while(!value.gen_lock_.try_lock(replaced) && !replaced) {
+        std::this_thread::yield();
+      }
+      if(replaced) {
+        // Some other thread replaced this record.
+        return false;
+      }
+      uint64_t new_length = cb_(value.buffer(), value.length_, modification_, length_, NULL);
+      if(value.size_ < sizeof(Value) + new_length) {
+        // Current value is too small for in-place update.
+        value.gen_lock_.unlock(true);
+        return false;
+      }
+      // In-place update overwrites length and buffer, but not size.
+      cb_(value.buffer(), value.length_, modification_, length_, value.buffer());
+      value.length_ = new_length;
+      value.gen_lock_.unlock(false);
       return true;
     }
 
-   protected:
+  protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
 
-   private:
+  private:
     Key key_;
-    uint64_t incr_;
+    uint8_t* modification_;
+    uint64_t length_;
+    rmw_callback cb_;
   };
 
   typedef FASTER::environment::QueueIoHandler handler_t;
@@ -206,7 +334,7 @@ extern "C" {
   typedef FASTER::device::NullDisk  disk_null_t;
   using store_t = FasterKv<Key, Value, disk_t>;
   struct faster_t { store_t* obj; };
-  
+
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage) {
     faster_t* res = new faster_t();
     std::experimental::filesystem::create_directory(storage);
@@ -214,26 +342,26 @@ extern "C" {
     return res;
   }
 
-  uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, const uint64_t value) {
+  uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, uint8_t* value, uint64_t length) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        assert(result == Status::Ok);
+      assert(result == Status::Ok);
     };
 
-    UpsertContext context { key, value };
+    UpsertContext context { key, value, length };
     Status result = store->Upsert(context, callback, 1);
     return static_cast<uint8_t>(result);
   }
 
-  uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, const uint64_t value) {
+  uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, uint8_t* modification, const uint64_t length, rmw_callback cb) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<RmwContext> context { ctxt };
     };
 
-    RmwContext context{ key, value};
+    RmwContext context{ key, modification, length, cb};
     Status result = store->Rmw(context, callback, 1);
     return static_cast<uint8_t>(result);
   }
@@ -249,7 +377,7 @@ extern "C" {
     Status result = store->Read(context, callback, 1);
 
     if (result == Status::NotFound) {
-      cb(target, 0, NotFound);
+      cb(target, NULL, 0, NotFound);
     }
 
     return static_cast<uint8_t>(result);
@@ -310,7 +438,7 @@ extern "C" {
       faster_recover_result* res = (faster_recover_result*) malloc(sizeof(faster_recover_result));
       res->status= status_result;
       res->version = ver;
-    
+
       int ids_total = _session_ids.size();
       res->session_ids_count = ids_total;
       int session_len = 37; // 36 + 1
@@ -338,7 +466,7 @@ extern "C" {
   }
 
   // Thread-related
-  
+
   const char* faster_start_session(faster_t* faster_t) {
     if (faster_t == NULL) {
       return NULL;
