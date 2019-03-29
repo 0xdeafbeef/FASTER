@@ -342,7 +342,8 @@ extern "C" {
     return res;
   }
 
-  uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, uint8_t* value, uint64_t length) {
+  uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, uint8_t* value,
+                        uint64_t length, const uint64_t monotonic_serial_number) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -350,11 +351,12 @@ extern "C" {
     };
 
     UpsertContext context { key, value, length };
-    Status result = store->Upsert(context, callback, 1);
+    Status result = store->Upsert(context, callback, monotonic_serial_number);
     return static_cast<uint8_t>(result);
   }
 
-  uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, uint8_t* modification, const uint64_t length, rmw_callback cb) {
+  uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, uint8_t* modification, const uint64_t length,
+                     const uint64_t monotonic_serial_number, rmw_callback cb) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -362,11 +364,12 @@ extern "C" {
     };
 
     RmwContext context{ key, modification, length, cb};
-    Status result = store->Rmw(context, callback, 1);
+    Status result = store->Rmw(context, callback, monotonic_serial_number);
     return static_cast<uint8_t>(result);
   }
 
-  uint8_t faster_read(faster_t* faster_t, const uint64_t key, read_callback cb, void* target) {
+  uint8_t faster_read(faster_t* faster_t, const uint64_t key, const uint64_t monotonic_serial_number,
+                      read_callback cb, void* target) {
     store_t* store = faster_t->obj;
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -374,7 +377,7 @@ extern "C" {
     };
 
     ReadContext context {key, cb, target};
-    Status result = store->Read(context, callback, 1);
+    Status result = store->Read(context, callback, monotonic_serial_number);
 
     if (result == Status::NotFound) {
       cb(target, NULL, 0, NotFound);
