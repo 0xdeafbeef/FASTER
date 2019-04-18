@@ -55,6 +55,7 @@ extern "C" {
   void faster_refresh_session(faster_t* faster_t);
 
   // Operations
+  faster_t* faster_open(const uint64_t table_size, const uint64_t log_size);
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage);
   uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, uint8_t* value,
                         uint64_t length, const uint64_t monotonic_serial_number);

@@ -329,55 +329,94 @@ extern "C" {
     rmw_callback cb_;
   };
 
+  enum store_type {
+      NULL_DISK,
+      FILESYSTEM_DISK,
+  };
+  typedef enum store_type store_type;
+
   typedef FASTER::environment::QueueIoHandler handler_t;
   typedef FASTER::device::FileSystemDisk<handler_t, 1073741824L> disk_t;
   typedef FASTER::device::NullDisk  disk_null_t;
   using store_t = FasterKv<Key, Value, disk_t>;
-  struct faster_t { store_t* obj; };
+  using null_store_t = FasterKv<Key, Value, disk_null_t>;
+  struct faster_t {
+      union {
+          store_t* store;
+          null_store_t* null_store;
+      } obj;
+      store_type type;
+  };
+
+  faster_t* faster_open(const uint64_t table_size, const uint64_t log_size) {
+    faster_t* res = new faster_t();
+    res->obj.null_store = new null_store_t { table_size, log_size, "" };
+    res->type = NULL_DISK;
+    return res;
+  }
 
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage) {
     faster_t* res = new faster_t();
     std::experimental::filesystem::create_directory(storage);
-    res->obj= new store_t { table_size, log_size, storage };
+    res->obj.store= new store_t { table_size, log_size, storage };
+    res->type = FILESYSTEM_DISK;
     return res;
   }
 
   uint8_t faster_upsert(faster_t* faster_t, const uint64_t key, uint8_t* value,
                         uint64_t length, const uint64_t monotonic_serial_number) {
-    store_t* store = faster_t->obj;
-
     auto callback = [](IAsyncContext* ctxt, Status result) {
       assert(result == Status::Ok);
     };
 
     UpsertContext context { key, value, length };
-    Status result = store->Upsert(context, callback, monotonic_serial_number);
+    Status result;
+    switch (faster_t->type) {
+      case NULL_DISK:
+        result = faster_t->obj.null_store->Upsert(context, callback, monotonic_serial_number);
+        break;
+      case FILESYSTEM_DISK:
+        result = faster_t->obj.store->Upsert(context, callback, monotonic_serial_number);
+        break;
+    }
     return static_cast<uint8_t>(result);
   }
 
   uint8_t faster_rmw(faster_t* faster_t, const uint64_t key, uint8_t* modification, const uint64_t length,
                      const uint64_t monotonic_serial_number, rmw_callback cb) {
-    store_t* store = faster_t->obj;
-
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<RmwContext> context { ctxt };
     };
 
     RmwContext context{ key, modification, length, cb};
-    Status result = store->Rmw(context, callback, monotonic_serial_number);
+    Status result;
+    switch (faster_t->type) {
+      case NULL_DISK:
+        result = faster_t->obj.null_store->Rmw(context, callback, monotonic_serial_number);
+        break;
+      case FILESYSTEM_DISK:
+        result = faster_t->obj.store->Rmw(context, callback, monotonic_serial_number);
+        break;
+    }
     return static_cast<uint8_t>(result);
   }
 
   uint8_t faster_read(faster_t* faster_t, const uint64_t key, const uint64_t monotonic_serial_number,
                       read_callback cb, void* target) {
-    store_t* store = faster_t->obj;
-
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context { ctxt };
     };
 
     ReadContext context {key, cb, target};
-    Status result = store->Read(context, callback, monotonic_serial_number);
+    Status result;
+    switch (faster_t->type) {
+      case NULL_DISK:
+        result = faster_t->obj.null_store->Read(context, callback, monotonic_serial_number);
+        break;
+      case FILESYSTEM_DISK:
+        result = faster_t->obj.store->Read(context, callback, monotonic_serial_number);
+        break;
+    }
 
     if (result == Status::NotFound) {
       cb(target, NULL, 0, NotFound);
@@ -389,14 +428,20 @@ extern "C" {
   // It is up to the caller to dealloc faster_checkpoint_result*
   // first token, then struct
   faster_checkpoint_result* faster_checkpoint(faster_t* faster_t) {
-    store_t* store = faster_t->obj;
     auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
       assert(result == Status::Ok);
     };
 
     Guid token;
-    bool checked = store->Checkpoint(nullptr, hybrid_log_persistence_callback, token);
-    //faster_checkpoint_result* res = new faster_checkpoint_result();
+    bool checked;
+    switch (faster_t->type) {
+      case NULL_DISK:
+        checked = faster_t->obj.null_store->Checkpoint(nullptr, hybrid_log_persistence_callback, token);
+        break;
+      case FILESYSTEM_DISK:
+        checked = faster_t->obj.store->Checkpoint(nullptr, hybrid_log_persistence_callback, token);
+        break;
+    }
     faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
     res->checked = checked;
     res->token = (char*) malloc(37 * sizeof(char));
@@ -408,7 +453,12 @@ extern "C" {
     if (faster_t == NULL)
       return;
 
-    delete faster_t->obj;
+    switch (faster_t->type) {
+      case NULL_DISK:
+        delete faster_t->obj.null_store;
+      case FILESYSTEM_DISK:
+        delete faster_t->obj.store;
+    }
     delete faster_t;
   }
 
@@ -416,8 +466,12 @@ extern "C" {
     if (faster_t == NULL) {
       return -1;
     } else {
-      store_t* store = faster_t->obj;
-      return store->Size();
+      switch (faster_t->type) {
+        case NULL_DISK:
+          return faster_t->obj.null_store->Size();
+        case FILESYSTEM_DISK:
+          return faster_t->obj.store->Size();
+      }
     }
   }
 
@@ -426,7 +480,6 @@ extern "C" {
     if (faster_t == NULL) {
       return NULL;
     } else {
-      store_t* store = faster_t->obj;
       uint32_t ver;
       std::vector<Guid> _session_ids;
 
@@ -435,7 +488,15 @@ extern "C" {
       //TODO: error handling
       Guid index_guid = Guid::Parse(index_str);
       Guid hybrid_guid = Guid::Parse(hybrid_str);
-      Status sres = store->Recover(index_guid, hybrid_guid, ver, _session_ids);
+      Status sres;
+      switch (faster_t->type) {
+        case NULL_DISK:
+          sres = faster_t->obj.null_store->Recover(index_guid, hybrid_guid, ver, _session_ids);
+          break;
+        case FILESYSTEM_DISK:
+          sres = faster_t->obj.store->Recover(index_guid, hybrid_guid, ver, _session_ids);
+          break;
+      }
 
       uint8_t status_result = static_cast<uint8_t>(sres);
       faster_recover_result* res = (faster_recover_result*) malloc(sizeof(faster_recover_result));
@@ -463,8 +524,12 @@ extern "C" {
 
   void faster_complete_pending(faster_t* faster_t, bool b) {
     if (faster_t != NULL) {
-      store_t* store = faster_t->obj;
-      store->CompletePending(b);
+      switch (faster_t->type) {
+        case NULL_DISK:
+          faster_t->obj.null_store->CompletePending(b);
+        case FILESYSTEM_DISK:
+          faster_t->obj.store->CompletePending(b);
+      }
     }
   }
 
@@ -474,8 +539,15 @@ extern "C" {
     if (faster_t == NULL) {
       return NULL;
     } else {
-      store_t* store = faster_t->obj;
-      Guid guid = store->StartSession();
+      Guid guid;
+      switch (faster_t->type) {
+        case NULL_DISK:
+          guid = faster_t->obj.null_store->StartSession();
+          break;
+        case FILESYSTEM_DISK:
+          guid = faster_t->obj.store->StartSession();
+          break;
+      }
       char* str = new char[37];
       std::strcpy(str, guid.ToString().c_str());
       return str;
@@ -487,24 +559,36 @@ extern "C" {
     if (faster_t == NULL) {
       return -1;
     } else {
-      store_t* store = faster_t->obj;
       std::string guid_str(token);
       Guid guid = Guid::Parse(guid_str);
-      return store->ContinueSession(guid);
+      switch (faster_t->type) {
+        case NULL_DISK:
+          return faster_t->obj.null_store->ContinueSession(guid);
+        case FILESYSTEM_DISK:
+          return faster_t->obj.store->ContinueSession(guid);
+      }
     }
   }
 
   void faster_stop_session(faster_t* faster_t) {
     if (faster_t != NULL) {
-      store_t* store = faster_t->obj;
-      store->StopSession();
+      switch (faster_t->type) {
+        case NULL_DISK:
+          faster_t->obj.null_store->StopSession();
+        case FILESYSTEM_DISK:
+          faster_t->obj.store->StopSession();
+      }
     }
   }
 
   void faster_refresh_session(faster_t* faster_t) {
     if (faster_t != NULL) {
-      store_t* store = faster_t->obj;
-      store->Refresh();
+      switch (faster_t->type) {
+        case NULL_DISK:
+          faster_t->obj.null_store->Refresh();
+        case FILESYSTEM_DISK:
+          faster_t->obj.store->Refresh();
+      }
     }
   }
 
