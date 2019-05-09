@@ -233,8 +233,11 @@ void thread_setup_store(faster_t* store, size_t thread_idx) {
 
       uint8_t* val = new uint8_t[1];
       val[0] = value;
-      faster_upsert(store, init_keys_.get()[idx], val, 1, 1);
+      uint8_t* key = new uint8_t[8];
+      memcpy(key, &init_keys_.get()[idx], 8);
+      faster_upsert(store, key, 8, val, 1, 1);
       free(val);
+      free(key);
     }
   }
 
@@ -296,8 +299,11 @@ void thread_run_benchmark(faster_t* store, size_t thread_idx) {
       case Op::Upsert: {
         uint8_t* val = new uint8_t[1];
         val[0] = upsert_value;
-        faster_upsert(store, txn_keys_.get()[idx], val, 1, 1);
+        uint8_t* key = new uint8_t[8];
+        memcpy(key, &txn_keys_.get()[idx], 8);
+        faster_upsert(store, key, 8, val, 1, 1);
         free(val);
+        free(key);
         ++writes_done;
         break;
       }
@@ -306,15 +312,21 @@ void thread_run_benchmark(faster_t* store, size_t thread_idx) {
         exit(1);
         break;
       case Op::Read: {
-        faster_read(store, txn_keys_.get()[idx], 1, read_cb, NULL);
+        uint8_t* key = new uint8_t[8];
+        memcpy(key, &txn_keys_.get()[idx], 8);
+        faster_read(store, key, 8, 1, read_cb, NULL);
+        free(key);
         ++reads_done;
         break;
       }
       case Op::ReadModifyWrite:
         uint8_t* modification = new uint8_t[1];
         modification[0] = 0;
-        uint8_t result = faster_rmw(store, txn_keys_.get()[idx], modification, 1, 1, rmw_cb);
+        uint8_t* key = new uint8_t[8];
+        memcpy(key, &txn_keys_.get()[idx], 8);
+        uint8_t result = faster_rmw(store, key, 8, modification, 1, 1, rmw_cb);
         free(modification);
+        free(key);
         if(result == 0) {
           ++writes_done;
         }
