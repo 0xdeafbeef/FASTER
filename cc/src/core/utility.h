@@ -47,7 +47,6 @@ class Utility {
       // Both are primes and have a good distribution of bits.
       const uint64_t kMagicNum = 40343;
       uint64_t hashState = len;
-
       for(size_t idx = 0; idx < len; ++idx) {
         hashState = kMagicNum * hashState + str[idx];
       }
