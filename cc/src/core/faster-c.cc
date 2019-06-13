@@ -203,15 +203,17 @@ extern "C" {
     }
     inline void GetAtomic(const Value& value) {
       GenLock before, after;
-      const uint8_t* buffer;
-      uint64_t length;
+      uint8_t* buffer = NULL;
+      uint64_t length = 0;
       do {
         before = value.gen_lock_.load();
-        buffer = value.buffer();
+        buffer = (uint8_t*) realloc(buffer, value.length_);
+        memcpy(buffer, value.buffer(), value.length_);
         length = value.length_;
         after = value.gen_lock_.load();
       } while(before.gen_number != after.gen_number);
       cb_(target_, buffer, length, Ok);
+      free(buffer);
     }
 
   protected:
