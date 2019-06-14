@@ -497,6 +497,54 @@ extern "C" {
     return res;
   }
 
+  // It is up to the caller to dealloc faster_checkpoint_result*
+  // first token, then struct
+  faster_checkpoint_result* faster_checkpoint_index(faster_t* faster_t) {
+    auto index_persistence_callback = [](Status result) {
+        assert(result == Status::Ok);
+    };
+
+    Guid token;
+    bool checked;
+    switch (faster_t->type) {
+      case NULL_DISK:
+        checked = faster_t->obj.null_store->CheckpointIndex(index_persistence_callback, token);
+        break;
+      case FILESYSTEM_DISK:
+        checked = faster_t->obj.store->CheckpointIndex(index_persistence_callback, token);
+        break;
+    }
+    faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
+    res->checked = checked;
+    res->token = (char*) malloc(37 * sizeof(char));
+    strncpy(res->token, token.ToString().c_str(), 37);
+    return res;
+  }
+
+  // It is up to the caller to dealloc faster_checkpoint_result*
+  // first token, then struct
+  faster_checkpoint_result* faster_checkpoint_hybrid_log(faster_t* faster_t) {
+    auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
+        assert(result == Status::Ok);
+    };
+
+    Guid token;
+    bool checked;
+    switch (faster_t->type) {
+      case NULL_DISK:
+        checked = faster_t->obj.null_store->CheckpointHybridLog(hybrid_log_persistence_callback, token);
+        break;
+      case FILESYSTEM_DISK:
+        checked = faster_t->obj.store->CheckpointHybridLog(hybrid_log_persistence_callback, token);
+        break;
+    }
+    faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
+    res->checked = checked;
+    res->token = (char*) malloc(37 * sizeof(char));
+    strncpy(res->token, token.ToString().c_str(), 37);
+    return res;
+  }
+
   void faster_destroy(faster_t *faster_t) {
     if (faster_t == NULL)
       return;
