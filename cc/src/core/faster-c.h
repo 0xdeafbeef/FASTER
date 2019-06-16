@@ -70,13 +70,10 @@ extern "C" {
   uint64_t faster_size(faster_t* faster_t);
   faster_recover_result* faster_recover(faster_t* faster_t, const char* index_token, const char* hybrid_log_token);
   void faster_complete_pending(faster_t* faster_t, bool b);
+  void faster_dump_distribution(faster_t* faster_t);
   // TODO:
   // GrowIndex
-  // StartSession
-  // StopSession
-  // ContinueSession
   // **Statistics**
-  // DumpDistribution
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -688,4 +688,15 @@ extern "C" {
     }
   }
 
+  void faster_dump_distribution(faster_t* faster_t) {
+    if (faster_t != NULL) {
+      switch (faster_t->type) {
+        case NULL_DISK:
+          faster_t->obj.null_store->DumpDistribution();
+        case FILESYSTEM_DISK:
+          faster_t->obj.store->DumpDistribution();
+      }
+    }
+  }
+
 } // extern "C"
