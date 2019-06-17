@@ -552,8 +552,10 @@ extern "C" {
     switch (faster_t->type) {
       case NULL_DISK:
         delete faster_t->obj.null_store;
+        break;
       case FILESYSTEM_DISK:
         delete faster_t->obj.store;
+        break;
     }
     delete faster_t;
   }
@@ -623,8 +625,10 @@ extern "C" {
       switch (faster_t->type) {
         case NULL_DISK:
           faster_t->obj.null_store->CompletePending(b);
+          break;
         case FILESYSTEM_DISK:
           faster_t->obj.store->CompletePending(b);
+          break;
       }
     }
   }
@@ -671,8 +675,10 @@ extern "C" {
       switch (faster_t->type) {
         case NULL_DISK:
           faster_t->obj.null_store->StopSession();
+          break;
         case FILESYSTEM_DISK:
           faster_t->obj.store->StopSession();
+          break;
       }
     }
   }
@@ -682,8 +688,10 @@ extern "C" {
       switch (faster_t->type) {
         case NULL_DISK:
           faster_t->obj.null_store->Refresh();
+          break;
         case FILESYSTEM_DISK:
           faster_t->obj.store->Refresh();
+          break;
       }
     }
   }
@@ -693,8 +701,10 @@ extern "C" {
       switch (faster_t->type) {
         case NULL_DISK:
           faster_t->obj.null_store->DumpDistribution();
+          break;
         case FILESYSTEM_DISK:
           faster_t->obj.store->DumpDistribution();
+          break;
       }
     }
   }
