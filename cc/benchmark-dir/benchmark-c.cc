@@ -420,6 +420,7 @@ void run(Workload workload, size_t num_threads) {
   printf("Populating the store...\n");
 
   setup_store(store, num_threads);
+  faster_dump_distribution(store);
 
   printf("Running benchmark on %" PRIu64 " threads...\n", num_threads);
   switch(workload) {
