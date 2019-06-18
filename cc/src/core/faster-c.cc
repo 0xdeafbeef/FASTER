@@ -46,17 +46,15 @@ extern "C" {
       /// Comparison operators.
       inline bool operator==(const Key& other) const {
         if (this->key_length_ != other.key_length_) return false;
-        if (this->temp_buffer != NULL) {
-          return memcmp(temp_buffer, other.buffer(), key_length_) == 0;
-        }
-        return memcmp(buffer(), other.buffer(), key_length_) == 0;
+        const uint8_t* self_buffer = this->temp_buffer == NULL ? buffer() : this->temp_buffer;
+        const uint8_t* other_buffer = other.temp_buffer == NULL ? other.buffer() : other.temp_buffer;
+        return memcmp(self_buffer, other_buffer, key_length_) == 0;
       }
       inline bool operator!=(const Key& other) const {
         if (this->key_length_ != other.key_length_) return true;
-        if (this->temp_buffer != NULL) {
-          return memcmp(temp_buffer, other.buffer(), key_length_) != 0;
-        }
-        return memcmp(buffer(), other.buffer(), key_length_) != 0;
+        const uint8_t* self_buffer = this->temp_buffer == NULL ? buffer() : this->temp_buffer;
+        const uint8_t* other_buffer = other.temp_buffer == NULL ? other.buffer() : other.temp_buffer;
+        return memcmp(self_buffer, other_buffer, key_length_) != 0;
       }
 
     private:
