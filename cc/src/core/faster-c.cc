@@ -216,6 +216,11 @@ extern "C" {
       free(buffer);
     }
 
+    /// For async reads returning not found
+    inline void ReturnNotFound() {
+      cb_(target_, NULL, 0, NotFound);
+    }
+
   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
@@ -450,6 +455,9 @@ extern "C" {
                        const uint64_t monotonic_serial_number, read_callback cb, void* target) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context { ctxt };
+      if (result == Status::NotFound) {
+        context->ReturnNotFound();
+      }
     };
 
     // Clone key because it may be deallocated before read completed
