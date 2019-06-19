@@ -53,6 +53,13 @@ extern "C" {
   uint64_t faster_continue_session(faster_t* faster_t, const char* token);
   void faster_stop_session(faster_t* faster_t);
   void faster_refresh_session(faster_t* faster_t);
+  void faster_complete_pending(faster_t* faster_t, bool b);
+
+  // Checkpoint/Recover
+  faster_checkpoint_result* faster_checkpoint(faster_t* faster_t);
+  faster_checkpoint_result* faster_checkpoint_index(faster_t* faster_t);
+  faster_checkpoint_result* faster_checkpoint_hybrid_log(faster_t* faster_t);
+  faster_recover_result* faster_recover(faster_t* faster_t, const char* index_token, const char* hybrid_log_token);
 
   // Operations
   faster_t* faster_open(const uint64_t table_size, const uint64_t log_size);
@@ -63,17 +70,12 @@ extern "C" {
                      const uint64_t length, const uint64_t monotonic_serial_number, rmw_callback cb);
   uint8_t faster_read(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                        const uint64_t monotonic_serial_number, read_callback cb, void* target);
-  faster_checkpoint_result* faster_checkpoint(faster_t* faster_t);
-  faster_checkpoint_result* faster_checkpoint_index(faster_t* faster_t);
-  faster_checkpoint_result* faster_checkpoint_hybrid_log(faster_t* faster_t);
   void faster_destroy(faster_t* faster_t);
+  bool faster_grow_index(faster_t* faster_t);
+
+  // Statistics
   uint64_t faster_size(faster_t* faster_t);
-  faster_recover_result* faster_recover(faster_t* faster_t, const char* index_token, const char* hybrid_log_token);
-  void faster_complete_pending(faster_t* faster_t, bool b);
   void faster_dump_distribution(faster_t* faster_t);
-  // TODO:
-  // GrowIndex
-  // **Statistics**
 
 #ifdef __cplusplus
 }  // extern "C"

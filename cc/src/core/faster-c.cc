@@ -715,4 +715,18 @@ extern "C" {
     }
   }
 
+  bool faster_grow_index(faster_t* faster_t) {
+    auto grow_index_callback = [](uint64_t new_size) {
+        assert(new_size > 0);
+    };
+    if (faster_t != NULL) {
+      switch (faster_t->type) {
+        case NULL_DISK:
+          return faster_t->obj.null_store->GrowIndex(grow_index_callback);
+        case FILESYSTEM_DISK:
+          return faster_t->obj.store->GrowIndex(grow_index_callback);
+      }
+    }
+  }
+
 } // extern "C"
