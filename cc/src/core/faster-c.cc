@@ -610,15 +610,11 @@ extern "C" {
       int ids_total = _session_ids.size();
       res->session_ids_count = ids_total;
       int session_len = 37; // 36 + 1
-      res->session_ids = (char**) malloc(sizeof(char*));
-
-      for (int i = 0; i < ids_total; i++) {
-          res->session_ids[i] = (char*) malloc(session_len);
-      }
+      res->session_ids = (char*) malloc(sizeof(char) * ids_total * session_len);
 
       int counter = 0;
       for (auto& id : _session_ids) {
-        strncpy(res->session_ids[counter], id.ToString().c_str(), session_len);
+        strncpy(res->session_ids + counter * session_len * sizeof(char), id.ToString().c_str(), session_len);
         counter++;
       }
 

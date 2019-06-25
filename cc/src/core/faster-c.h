@@ -45,7 +45,7 @@ extern "C" {
     uint8_t status;
     uint32_t version;
     int session_ids_count;
-    char** session_ids;
+    char* session_ids;
   };
 
   // Thread-related operations
