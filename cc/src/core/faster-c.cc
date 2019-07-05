@@ -305,7 +305,8 @@ extern "C" {
       : key_{ key, key_length }
       , modification_{ modification }
       , length_{ length }
-      , cb_{ cb } {
+      , cb_{ cb }
+      , new_length_{ 0 }{
     }
 
     /// Copy (and deep-copy) constructor.
@@ -313,7 +314,8 @@ extern "C" {
       : key_{ other.key_ }
       , modification_{ other.modification_ }
       , length_{ other.length_ }
-      , cb_{ other.cb_ } {
+      , cb_{ other.cb_ }
+      , new_length_{ other.new_length_ }{
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -321,7 +323,13 @@ extern "C" {
       return key_;
     }
     inline uint32_t value_size() const {
-      return sizeof(value_t) + length_;
+      return sizeof(Value) + length_;
+    }
+    inline uint32_t value_size(const Value& old_value) {
+      if (new_length_ != 0) {
+        new_length_ = cb_(old_value.buffer(), old_value.length_, modification_, length_, NULL);
+      }
+      return sizeof(Value) + new_length_;
     }
 
     inline void RmwInitial(Value& value) {
@@ -344,15 +352,17 @@ extern "C" {
         // Some other thread replaced this record.
         return false;
       }
-      uint64_t new_length = cb_(value.buffer(), value.length_, modification_, length_, NULL);
-      if(value.size_ < sizeof(Value) + new_length) {
+      if (new_length_ == 0) {
+        new_length_ = cb_(value.buffer(), value.length_, modification_, length_, NULL);
+      }
+      if(value.size_ < sizeof(Value) + new_length_) {
         // Current value is too small for in-place update.
         value.gen_lock_.unlock(true);
         return false;
       }
       // In-place update overwrites length and buffer, but not size.
       cb_(value.buffer(), value.length_, modification_, length_, value.buffer());
-      value.length_ = new_length;
+      value.length_ = new_length_;
       value.gen_lock_.unlock(false);
       return true;
     }
@@ -368,6 +378,7 @@ extern "C" {
     uint8_t* modification_;
     uint64_t length_;
     rmw_callback cb_;
+    uint64_t new_length_;
   };
 
   enum store_type {
