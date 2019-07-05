@@ -326,7 +326,7 @@ extern "C" {
       return sizeof(Value) + length_;
     }
     inline uint32_t value_size(const Value& old_value) {
-      if (new_length_ != 0) {
+      if (new_length_ == 0) {
         new_length_ = cb_(old_value.buffer(), old_value.length_, modification_, length_, NULL);
       }
       return sizeof(Value) + new_length_;
