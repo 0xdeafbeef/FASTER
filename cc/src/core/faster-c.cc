@@ -28,7 +28,7 @@ extern "C" {
 
       ~Key() {
         if (this->temp_buffer != NULL) {
-          free((void*)temp_buffer);
+          delete[] this->temp_buffer;
         }
       }
 
@@ -422,7 +422,7 @@ extern "C" {
     };
 
     // Clone key because it may be deallocated before record created
-    uint8_t* cloned_key = (uint8_t*) malloc(key_length);
+    uint8_t* cloned_key = new uint8_t[key_length];
     memcpy(cloned_key, key, key_length);
 
     UpsertContext context { cloned_key, key_length, value, value_length };
@@ -445,7 +445,7 @@ extern "C" {
     };
 
     // Clone key because it may be deallocated before rmw completed
-    uint8_t* cloned_key = (uint8_t*) malloc(key_length);
+    uint8_t* cloned_key = new uint8_t[key_length];
     memcpy(cloned_key, key, key_length);
     RmwContext context{ cloned_key, key_length, modification, length, cb};
     Status result;
@@ -470,7 +470,7 @@ extern "C" {
     };
 
     // Clone key because it may be deallocated before read completed
-    uint8_t* cloned_key = (uint8_t*) malloc(key_length);
+    uint8_t* cloned_key = new uint8_t[key_length];
     memcpy(cloned_key, key, key_length);
     ReadContext context {cloned_key, key_length, cb, target};
     Status result;
