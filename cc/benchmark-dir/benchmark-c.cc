@@ -88,6 +88,12 @@ uint64_t rmw_cb(const uint8_t* current, uint64_t length, uint8_t* modification, 
   return 1;
 }
 
+extern "C" {
+  void deallocate_vec(uint8_t* vec, uint64_t length) {
+    delete[] vec;
+  }
+}
+
 /// Affinitize to hardware threads on the same core first, before
 /// moving on to the next core.
 void SetThreadAffinity(size_t core) {
@@ -236,8 +242,6 @@ void thread_setup_store(faster_t* store, size_t thread_idx) {
       uint8_t* key = new uint8_t[8];
       memcpy(key, &init_keys_.get()[idx], 8);
       faster_upsert(store, key, 8, val, 1, 1);
-      free(val);
-      free(key);
     }
   }
 
@@ -302,8 +306,6 @@ void thread_run_benchmark(faster_t* store, size_t thread_idx) {
         uint8_t* key = new uint8_t[8];
         memcpy(key, &txn_keys_.get()[idx], 8);
         faster_upsert(store, key, 8, val, 1, 1);
-        free(val);
-        free(key);
         ++writes_done;
         break;
       }
@@ -315,7 +317,6 @@ void thread_run_benchmark(faster_t* store, size_t thread_idx) {
         uint8_t* key = new uint8_t[8];
         memcpy(key, &txn_keys_.get()[idx], 8);
         faster_read(store, key, 8, 1, read_cb, NULL);
-        free(key);
         ++reads_done;
         break;
       }
@@ -325,8 +326,6 @@ void thread_run_benchmark(faster_t* store, size_t thread_idx) {
         uint8_t* key = new uint8_t[8];
         memcpy(key, &txn_keys_.get()[idx], 8);
         uint8_t result = faster_rmw(store, key, 8, modification, 1, 1, rmw_cb);
-        free(modification);
-        free(key);
         if(result == 0) {
           ++writes_done;
         }
