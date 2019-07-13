@@ -9,26 +9,28 @@
 
 extern "C" {
 
+  void deallocate_vec(uint8_t*, uint64_t);
+
   class Key {
     public:
       Key(const uint8_t* key, const uint64_t key_length)
-        : temp_buffer{ key }
+        : temp_buffer_{ key }
         , key_length_{ key_length } {
       }
 
       Key(const Key& other) {
         key_length_ = other.key_length_;
-        temp_buffer = NULL;
-        if (other.temp_buffer == NULL) {
+        temp_buffer_ = NULL;
+        if (other.temp_buffer_ == NULL) {
           memcpy(buffer(), other.buffer(), key_length_);
         } else {
-          memcpy(buffer(), other.temp_buffer, key_length_);
+          memcpy(buffer(), other.temp_buffer_, key_length_);
         }
       }
 
       ~Key() {
-        if (this->temp_buffer != NULL) {
-          delete[] this->temp_buffer;
+        if (this->temp_buffer_ != NULL) {
+          deallocate_vec((uint8_t*) this->temp_buffer_, this->key_length_);
         }
       }
 
@@ -37,8 +39,8 @@ extern "C" {
         return static_cast<uint32_t>(sizeof(Key) + key_length_);
       }
       inline KeyHash GetHash() const {
-        if (this->temp_buffer != NULL) {
-          return KeyHash(Utility::Hash8BitBytes(temp_buffer, key_length_));
+        if (this->temp_buffer_ != NULL) {
+          return KeyHash(Utility::Hash8BitBytes(temp_buffer_, key_length_));
         }
         return KeyHash(Utility::Hash8BitBytes(buffer(), key_length_));
       }
@@ -46,20 +48,20 @@ extern "C" {
       /// Comparison operators.
       inline bool operator==(const Key& other) const {
         if (this->key_length_ != other.key_length_) return false;
-        const uint8_t* self_buffer = this->temp_buffer == NULL ? buffer() : this->temp_buffer;
-        const uint8_t* other_buffer = other.temp_buffer == NULL ? other.buffer() : other.temp_buffer;
+        const uint8_t* self_buffer = this->temp_buffer_ == NULL ? buffer() : this->temp_buffer_;
+        const uint8_t* other_buffer = other.temp_buffer_ == NULL ? other.buffer() : other.temp_buffer_;
         return memcmp(self_buffer, other_buffer, key_length_) == 0;
       }
       inline bool operator!=(const Key& other) const {
         if (this->key_length_ != other.key_length_) return true;
-        const uint8_t* self_buffer = this->temp_buffer == NULL ? buffer() : this->temp_buffer;
-        const uint8_t* other_buffer = other.temp_buffer == NULL ? other.buffer() : other.temp_buffer;
+        const uint8_t* self_buffer = this->temp_buffer_ == NULL ? buffer() : this->temp_buffer_;
+        const uint8_t* other_buffer = other.temp_buffer_ == NULL ? other.buffer() : other.temp_buffer_;
         return memcmp(self_buffer, other_buffer, key_length_) != 0;
       }
 
     private:
       uint64_t key_length_;
-      const uint8_t* temp_buffer;
+      const uint8_t* temp_buffer_;
 
       inline const uint8_t* buffer() const {
         return reinterpret_cast<const uint8_t*>(this + 1);
@@ -178,7 +180,7 @@ extern "C" {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(uint8_t* key, uint64_t key_length, read_callback cb, void* target)
+    ReadContext(const uint8_t* key, uint64_t key_length, read_callback cb, void* target)
       : key_{ key, key_length }
       , cb_ { cb }
       , target_ { target }  {
@@ -236,17 +238,24 @@ extern "C" {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(uint8_t* key, uint64_t key_length, uint8_t* input, uint64_t length)
+    UpsertContext(const uint8_t* key, uint64_t key_length, uint8_t* input, uint64_t length)
       : key_{ key, key_length }
       , input_{ input }
       , length_{ length } {
     }
 
     /// Copy (and deep-copy) constructor.
-    UpsertContext(const UpsertContext& other)
+    UpsertContext(UpsertContext& other)
       : key_{ other.key_ }
       , input_{ other.input_ }
       , length_{ other.length_ } {
+      other.input_ = NULL;
+    }
+
+    ~UpsertContext() {
+      if (input_ != NULL) {
+        deallocate_vec(input_, length_);
+      }
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -301,7 +310,7 @@ extern "C" {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(uint8_t* key, uint64_t key_length, uint8_t* modification, uint64_t length, rmw_callback cb)
+    RmwContext(const uint8_t* key, uint64_t key_length, uint8_t* modification, uint64_t length, rmw_callback cb)
       : key_{ key, key_length }
       , modification_{ modification }
       , length_{ length }
@@ -310,12 +319,19 @@ extern "C" {
     }
 
     /// Copy (and deep-copy) constructor.
-    RmwContext(const RmwContext& other)
+    RmwContext(RmwContext& other)
       : key_{ other.key_ }
       , modification_{ other.modification_ }
       , length_{ other.length_ }
       , cb_{ other.cb_ }
       , new_length_{ other.new_length_ }{
+      other.modification_ = NULL;
+    }
+
+    ~RmwContext() {
+      if (modification_ != NULL) {
+        deallocate_vec(modification_, length_);
+      }
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -421,11 +437,7 @@ extern "C" {
       assert(result == Status::Ok);
     };
 
-    // Clone key because it may be deallocated before record created
-    uint8_t* cloned_key = new uint8_t[key_length];
-    memcpy(cloned_key, key, key_length);
-
-    UpsertContext context { cloned_key, key_length, value, value_length };
+    UpsertContext context { key, key_length, value, value_length };
     Status result;
     switch (faster_t->type) {
       case NULL_DISK:
@@ -444,10 +456,7 @@ extern "C" {
       CallbackContext<RmwContext> context { ctxt };
     };
 
-    // Clone key because it may be deallocated before rmw completed
-    uint8_t* cloned_key = new uint8_t[key_length];
-    memcpy(cloned_key, key, key_length);
-    RmwContext context{ cloned_key, key_length, modification, length, cb};
+    RmwContext context{ key, key_length, modification, length, cb};
     Status result;
     switch (faster_t->type) {
       case NULL_DISK:
@@ -469,10 +478,7 @@ extern "C" {
       }
     };
 
-    // Clone key because it may be deallocated before read completed
-    uint8_t* cloned_key = new uint8_t[key_length];
-    memcpy(cloned_key, key, key_length);
-    ReadContext context {cloned_key, key_length, cb, target};
+    ReadContext context {key, key_length, cb, target};
     Status result;
     switch (faster_t->type) {
       case NULL_DISK:
