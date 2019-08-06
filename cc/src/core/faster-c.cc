@@ -131,7 +131,7 @@ extern "C" {
       return false;
     }
     inline void unlock(bool replaced) {
-      if(replaced) {
+      if(!replaced) {
         // Just turn off "locked" bit and increase gen number.
         uint64_t sub_delta = ((uint64_t)1 << 62) - 1;
         control_.fetch_sub(sub_delta);
@@ -349,13 +349,13 @@ extern "C" {
     }
 
     inline void RmwInitial(Value& value) {
-      value.gen_lock_.store(GenLock{});
+      value.gen_lock_.store(0);
       value.size_ = sizeof(Value) + length_;
       value.length_ = length_;
       std::memcpy(value.buffer(), modification_, length_);
     }
     inline void RmwCopy(const Value& old_value, Value& value) {
-      value.gen_lock_.store(GenLock{});
+      value.gen_lock_.store(0);
       value.length_ = cb_(old_value.buffer(), old_value.length_, modification_, length_, value.buffer());
       value.size_ = sizeof(Value) + value.length_;
     }
