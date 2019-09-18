@@ -62,8 +62,9 @@ extern "C" {
   faster_recover_result* faster_recover(faster_t* faster_t, const char* index_token, const char* hybrid_log_token);
 
   // Operations
-  faster_t* faster_open(const uint64_t table_size, const uint64_t log_size);
-  faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage);
+  faster_t* faster_open(const uint64_t table_size, const uint64_t log_size, bool pre_allocate_log);
+  faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage,
+                                  double log_mutable_fraction, bool pre_allocate_log);
   uint8_t faster_upsert(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                         uint8_t* value, uint64_t value_length, const uint64_t monotonic_serial_number);
   uint8_t faster_rmw(faster_t* faster_t, const uint8_t* key, const uint64_t key_length, uint8_t* modification,

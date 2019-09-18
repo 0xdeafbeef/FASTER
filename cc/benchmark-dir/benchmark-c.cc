@@ -414,7 +414,7 @@ void run(Workload workload, size_t num_threads) {
   // FASTER store has a hash table with approx. kInitCount / 2 entries, a log of size 16 GB,
   // and a null device (it's in-memory only).
   size_t init_size = next_power_of_two(kInitCount / 2);
-  faster_t* store = faster_open_with_disk(init_size, 17179869184, "storage");
+  faster_t* store = faster_open_with_disk(init_size, 17179869184, "storage", 0.9, false);
 
   printf("Populating the store...\n");
 

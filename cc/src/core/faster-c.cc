@@ -416,17 +416,18 @@ extern "C" {
       store_type type;
   };
 
-  faster_t* faster_open(const uint64_t table_size, const uint64_t log_size) {
+  faster_t* faster_open(const uint64_t table_size, const uint64_t log_size, bool pre_allocate_log = false) {
     faster_t* res = new faster_t();
-    res->obj.null_store = new null_store_t { table_size, log_size, "" };
+    res->obj.null_store = new null_store_t { table_size, log_size, "", 1.0, pre_allocate_log };
     res->type = NULL_DISK;
     return res;
   }
 
-  faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage) {
+  faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size,
+                                  const char* storage, double log_mutable_fraction = 0.9, bool pre_allocate_log = false) {
     faster_t* res = new faster_t();
     std::experimental::filesystem::create_directory(storage);
-    res->obj.store= new store_t { table_size, log_size, storage };
+    res->obj.store= new store_t { table_size, log_size, storage, log_mutable_fraction, pre_allocate_log };
     res->type = FILESYSTEM_DISK;
     return res;
   }
