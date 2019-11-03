@@ -71,6 +71,8 @@ extern "C" {
                      const uint64_t length, const uint64_t monotonic_serial_number, rmw_callback cb);
   uint8_t faster_read(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                        const uint64_t monotonic_serial_number, read_callback cb, void* target);
+  uint8_t faster_delete(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
+                        const uint64_t monotonic_serial_number);
   void faster_destroy(faster_t* faster_t);
   bool faster_grow_index(faster_t* faster_t);
 
