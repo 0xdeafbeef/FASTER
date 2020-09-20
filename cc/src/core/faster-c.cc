@@ -9,6 +9,7 @@
 
 extern "C" {
 
+  using namespace FASTER::core;
   void deallocate_vec(uint8_t*, uint64_t);
 
   class Key {
