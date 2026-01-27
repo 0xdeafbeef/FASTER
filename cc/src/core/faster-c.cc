@@ -344,7 +344,7 @@ extern "C" {
     inline uint32_t value_size() const {
       return sizeof(Value) + length_;
     }
-    inline uint32_t value_size(const Value& old_value) {
+    inline uint32_t value_size(const Value& old_value) const {
       if (new_length_ == 0) {
         new_length_ = cb_(old_value.buffer(), old_value.length_, modification_, length_, NULL);
       }
@@ -397,7 +397,7 @@ extern "C" {
     uint8_t* modification_;
     uint64_t length_;
     rmw_callback cb_;
-    uint64_t new_length_;
+    mutable uint64_t new_length_;
   };
 
   class DeleteContext : public IAsyncContext {
