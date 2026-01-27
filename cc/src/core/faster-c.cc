@@ -581,9 +581,11 @@ extern "C" {
     switch (faster_t->type) {
       case NULL_DISK:
         checked = faster_t->obj.null_store->Checkpoint(nullptr, hybrid_log_persistence_callback, token);
+        faster_t->obj.null_store->CompletePending(true);
         break;
       case FILESYSTEM_DISK:
         checked = faster_t->obj.store->Checkpoint(nullptr, hybrid_log_persistence_callback, token);
+        faster_t->obj.store->CompletePending(true);
         break;
     }
     faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
@@ -605,9 +607,11 @@ extern "C" {
     switch (faster_t->type) {
       case NULL_DISK:
         checked = faster_t->obj.null_store->CheckpointIndex(index_persistence_callback, token);
+        faster_t->obj.null_store->CompletePending(true);
         break;
       case FILESYSTEM_DISK:
         checked = faster_t->obj.store->CheckpointIndex(index_persistence_callback, token);
+        faster_t->obj.store->CompletePending(true);
         break;
     }
     faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
@@ -629,9 +633,11 @@ extern "C" {
     switch (faster_t->type) {
       case NULL_DISK:
         checked = faster_t->obj.null_store->CheckpointHybridLog(hybrid_log_persistence_callback, token);
+        faster_t->obj.null_store->CompletePending(true);
         break;
       case FILESYSTEM_DISK:
         checked = faster_t->obj.store->CheckpointHybridLog(hybrid_log_persistence_callback, token);
+        faster_t->obj.store->CompletePending(true);
         break;
     }
     faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
