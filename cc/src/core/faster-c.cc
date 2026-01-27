@@ -1,13 +1,17 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-
 #include <filesystem>
+#include <unordered_set>
 
 #include "faster.h"
 #include "faster-c.h"
 #include "device/file_system_disk.h"
 #include "device/null_disk.h"
+
+namespace {
+thread_local std::unordered_set<faster_t*> active_sessions;
+}  // namespace
 
 extern "C" {
 
@@ -452,6 +456,44 @@ extern "C" {
       store_type type;
   };
 
+  static bool start_session_if_needed(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return false;
+    }
+    if (active_sessions.find(faster_t) != active_sessions.end()) {
+      return false;
+    }
+
+    switch (faster_t->type) {
+      case NULL_DISK:
+        faster_t->obj.null_store->StartSession();
+        break;
+      case FILESYSTEM_DISK:
+        faster_t->obj.store->StartSession();
+        break;
+    }
+
+    active_sessions.insert(faster_t);
+    return true;
+  }
+
+  static void stop_session_if_started(faster_t* faster_t, bool started) {
+    if (!started || faster_t == NULL) {
+      return;
+    }
+
+    switch (faster_t->type) {
+      case NULL_DISK:
+        faster_t->obj.null_store->StopSession();
+        break;
+      case FILESYSTEM_DISK:
+        faster_t->obj.store->StopSession();
+        break;
+    }
+
+    active_sessions.erase(faster_t);
+  }
+
   faster_t* faster_open(const uint64_t table_size, const uint64_t log_size, bool pre_allocate_log = false) {
     faster_t* res = new faster_t();
     res->obj.null_store = new null_store_t{
@@ -572,12 +614,17 @@ extern "C" {
   // It is up to the caller to dealloc faster_checkpoint_result*
   // first token, then struct
   faster_checkpoint_result* faster_checkpoint(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return NULL;
+    }
+
     auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
       assert(result == Status::Ok);
     };
 
     Guid token;
     bool checked;
+    bool started = start_session_if_needed(faster_t);
     switch (faster_t->type) {
       case NULL_DISK:
         checked = faster_t->obj.null_store->Checkpoint(nullptr, hybrid_log_persistence_callback, token);
@@ -588,6 +635,7 @@ extern "C" {
         faster_t->obj.store->CompletePending(true);
         break;
     }
+    stop_session_if_started(faster_t, started);
     faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
     res->checked = checked;
     res->token = (char*) malloc(37 * sizeof(char));
@@ -598,12 +646,17 @@ extern "C" {
   // It is up to the caller to dealloc faster_checkpoint_result*
   // first token, then struct
   faster_checkpoint_result* faster_checkpoint_index(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return NULL;
+    }
+
     auto index_persistence_callback = [](Status result) {
         assert(result == Status::Ok);
     };
 
     Guid token;
     bool checked;
+    bool started = start_session_if_needed(faster_t);
     switch (faster_t->type) {
       case NULL_DISK:
         checked = faster_t->obj.null_store->CheckpointIndex(index_persistence_callback, token);
@@ -614,6 +667,7 @@ extern "C" {
         faster_t->obj.store->CompletePending(true);
         break;
     }
+    stop_session_if_started(faster_t, started);
     faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
     res->checked = checked;
     res->token = (char*) malloc(37 * sizeof(char));
@@ -624,12 +678,17 @@ extern "C" {
   // It is up to the caller to dealloc faster_checkpoint_result*
   // first token, then struct
   faster_checkpoint_result* faster_checkpoint_hybrid_log(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return NULL;
+    }
+
     auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
         assert(result == Status::Ok);
     };
 
     Guid token;
     bool checked;
+    bool started = start_session_if_needed(faster_t);
     switch (faster_t->type) {
       case NULL_DISK:
         checked = faster_t->obj.null_store->CheckpointHybridLog(hybrid_log_persistence_callback, token);
@@ -640,6 +699,7 @@ extern "C" {
         faster_t->obj.store->CompletePending(true);
         break;
     }
+    stop_session_if_started(faster_t, started);
     faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
     res->checked = checked;
     res->token = (char*) malloc(37 * sizeof(char));
@@ -650,6 +710,8 @@ extern "C" {
   void faster_destroy(faster_t *faster_t) {
     if (faster_t == NULL)
       return;
+
+    active_sessions.erase(faster_t);
 
     switch (faster_t->type) {
       case NULL_DISK:
@@ -746,6 +808,7 @@ extern "C" {
           guid = faster_t->obj.store->StartSession();
           break;
       }
+      active_sessions.insert(faster_t);
       char* str = new char[37];
       std::strcpy(str, guid.ToString().c_str());
       return str;
@@ -759,12 +822,17 @@ extern "C" {
     } else {
       std::string guid_str(token);
       Guid guid = Guid::Parse(guid_str);
+      uint64_t serial_num = 0;
       switch (faster_t->type) {
         case NULL_DISK:
-          return faster_t->obj.null_store->ContinueSession(guid);
+          serial_num = faster_t->obj.null_store->ContinueSession(guid);
+          break;
         case FILESYSTEM_DISK:
-          return faster_t->obj.store->ContinueSession(guid);
+          serial_num = faster_t->obj.store->ContinueSession(guid);
+          break;
       }
+      active_sessions.insert(faster_t);
+      return serial_num;
     }
   }
 
@@ -778,6 +846,7 @@ extern "C" {
           faster_t->obj.store->StopSession();
           break;
       }
+      active_sessions.erase(faster_t);
     }
   }
 
