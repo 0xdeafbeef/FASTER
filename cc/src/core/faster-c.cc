@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 
+#include <filesystem>
+
 #include "faster.h"
 #include "faster-c.h"
 #include "device/file_system_disk.h"
@@ -41,9 +43,9 @@ extern "C" {
       }
       inline KeyHash GetHash() const {
         if (this->temp_buffer_ != NULL) {
-          return KeyHash(Utility::Hash8BitBytes(temp_buffer_, key_length_));
+          return KeyHash(Utility::FasterHash::compute(temp_buffer_, key_length_));
         }
-        return KeyHash(Utility::Hash8BitBytes(buffer(), key_length_));
+        return KeyHash(Utility::FasterHash::compute(buffer(), key_length_));
       }
 
       /// Comparison operators.
@@ -452,7 +454,15 @@ extern "C" {
 
   faster_t* faster_open(const uint64_t table_size, const uint64_t log_size, bool pre_allocate_log = false) {
     faster_t* res = new faster_t();
-    res->obj.null_store = new null_store_t { table_size, log_size, "", 1.0, pre_allocate_log };
+    res->obj.null_store = new null_store_t{
+      null_store_t::IndexConfig{ table_size },
+      log_size,
+      "",
+      1.0,
+      DEFAULT_READ_CACHE_CONFIG,
+      DEFAULT_HLOG_COMPACTION_CONFIG,
+      pre_allocate_log,
+    };
     res->type = NULL_DISK;
     return res;
   }
@@ -460,8 +470,16 @@ extern "C" {
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size,
                                   const char* storage, double log_mutable_fraction = 0.9, bool pre_allocate_log = false) {
     faster_t* res = new faster_t();
-    std::experimental::filesystem::create_directory(storage);
-    res->obj.store= new store_t { table_size, log_size, storage, log_mutable_fraction, pre_allocate_log };
+    std::filesystem::create_directories(storage);
+    res->obj.store = new store_t{
+      store_t::IndexConfig{ table_size },
+      log_size,
+      storage,
+      log_mutable_fraction,
+      DEFAULT_READ_CACHE_CONFIG,
+      DEFAULT_HLOG_COMPACTION_CONFIG,
+      pre_allocate_log,
+    };
     res->type = FILESYSTEM_DISK;
     return res;
   }
