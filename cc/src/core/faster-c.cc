@@ -816,6 +816,12 @@ extern "C" {
 
   }
 
+  void faster_free_session(const char* token) {
+    if (token != NULL) {
+      delete[] token;
+    }
+  }
+
   uint64_t faster_continue_session(faster_t* faster_t, const char* token) {
     if (faster_t == NULL) {
       return -1;

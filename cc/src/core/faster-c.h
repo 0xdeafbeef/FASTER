@@ -50,6 +50,7 @@ extern "C" {
 
   // Thread-related operations
   const char* faster_start_session(faster_t* faster_t);
+  void faster_free_session(const char* token);
   uint64_t faster_continue_session(faster_t* faster_t, const char* token);
   void faster_stop_session(faster_t* faster_t);
   void faster_refresh_session(faster_t* faster_t);
@@ -85,4 +86,3 @@ extern "C" {
 #endif
 
 #endif  /* FASTER_C_H_ */
-
