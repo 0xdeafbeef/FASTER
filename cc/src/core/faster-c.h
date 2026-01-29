@@ -48,6 +48,11 @@ extern "C" {
     char* session_ids;
   };
 
+  // Rust allocator helpers (implemented in faster-rs)
+  uint8_t* faster_alloc_vec(uint64_t length);
+  faster_checkpoint_result* faster_alloc_checkpoint_result();
+  faster_recover_result* faster_alloc_recover_result();
+
   // Thread-related operations
   const char* faster_start_session(faster_t* faster_t);
   void faster_free_session(const char* token);

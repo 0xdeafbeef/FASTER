@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <unordered_set>
 
@@ -11,12 +13,29 @@
 
 namespace {
 thread_local std::unordered_set<faster_t*> active_sessions;
+
+static inline uint8_t handle_exception(const char* op, read_callback cb, void* target) {
+  try {
+    throw;
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "fckup faster ffi exception op=%s what=%s\n", op, e.what());
+  } catch (...) {
+    std::fprintf(stderr, "fckup faster ffi exception op=%s unknown\n", op);
+  }
+  if (cb != nullptr) {
+    cb(target, NULL, 0, Aborted);
+  }
+  return static_cast<uint8_t>(Aborted);
+}
 }  // namespace
 
 extern "C" {
 
   using namespace FASTER::core;
   void deallocate_vec(uint8_t*, uint64_t);
+  uint8_t* faster_alloc_vec(uint64_t);
+  faster_checkpoint_result* faster_alloc_checkpoint_result();
+  faster_recover_result* faster_alloc_recover_result();
 
   class Key {
     public:
@@ -188,16 +207,16 @@ extern "C" {
     typedef Value value_t;
 
     ReadContext(const uint8_t* key, uint64_t key_length, read_callback cb, void* target)
-      : key_{ key, key_length }
-      , cb_ { cb }
-      , target_ { target }  {
+      : cb_ { cb }
+      , target_ { target }
+      , key_{ key, key_length }  {
     }
 
     /// Copy (and deep-copy) constructor.
     ReadContext(const ReadContext& other)
-      : key_{ other.key_ }
-      , cb_ { other.cb_ }
-      , target_ { other.target_ }  {
+      : cb_ { other.cb_ }
+      , target_ { other.target_ }
+      , key_{ other.key_ }  {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -231,13 +250,19 @@ extern "C" {
   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+      context_copy = nullptr;
+      size_t extra = key_.size() - sizeof(Key);
+      auto ctxt = alloc_context<ReadContext>(sizeof(ReadContext) + extra);
+      if(!ctxt.get()) return Status::OutOfMemory;
+      new(ctxt.get()) ReadContext{ *this };
+      context_copy = ctxt.release();
+      return Status::Ok;
     }
 
   private:
-    Key key_;
     read_callback cb_;
     void* target_;
+    Key key_;
   };
 
   class UpsertContext : public IAsyncContext {
@@ -246,16 +271,16 @@ extern "C" {
     typedef Value value_t;
 
     UpsertContext(const uint8_t* key, uint64_t key_length, uint8_t* input, uint64_t length)
-      : key_{ key, key_length }
-      , input_{ input }
-      , length_{ length } {
+      : input_{ input }
+      , length_{ length }
+      , key_{ key, key_length } {
     }
 
     /// Copy (and deep-copy) constructor.
     UpsertContext(UpsertContext& other)
-      : key_{ other.key_ }
-      , input_{ other.input_ }
-      , length_{ other.length_ } {
+      : input_{ other.input_ }
+      , length_{ other.length_ }
+      , key_{ other.key_ } {
       other.input_ = NULL;
     }
 
@@ -303,13 +328,19 @@ extern "C" {
   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+      context_copy = nullptr;
+      size_t extra = key_.size() - sizeof(Key);
+      auto ctxt = alloc_context<UpsertContext>(sizeof(UpsertContext) + extra);
+      if(!ctxt.get()) return Status::OutOfMemory;
+      new(ctxt.get()) UpsertContext{ *this };
+      context_copy = ctxt.release();
+      return Status::Ok;
     }
 
   private:
-    key_t key_;
     uint8_t* input_;
     uint64_t length_;
+    key_t key_;
   };
 
   class RmwContext : public IAsyncContext {
@@ -318,20 +349,20 @@ extern "C" {
     typedef Value value_t;
 
     RmwContext(const uint8_t* key, uint64_t key_length, uint8_t* modification, uint64_t length, rmw_callback cb)
-      : key_{ key, key_length }
-      , modification_{ modification }
+      : modification_{ modification }
       , length_{ length }
       , cb_{ cb }
-      , new_length_{ 0 }{
+      , new_length_{ 0 }
+      , key_{ key, key_length }{
     }
 
     /// Copy (and deep-copy) constructor.
     RmwContext(RmwContext& other)
-      : key_{ other.key_ }
-      , modification_{ other.modification_ }
+      : modification_{ other.modification_ }
       , length_{ other.length_ }
       , cb_{ other.cb_ }
-      , new_length_{ other.new_length_ }{
+      , new_length_{ other.new_length_ }
+      , key_{ other.key_ }{
       other.modification_ = NULL;
     }
 
@@ -393,15 +424,21 @@ extern "C" {
   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+      context_copy = nullptr;
+      size_t extra = key_.size() - sizeof(Key);
+      auto ctxt = alloc_context<RmwContext>(sizeof(RmwContext) + extra);
+      if(!ctxt.get()) return Status::OutOfMemory;
+      new(ctxt.get()) RmwContext{ *this };
+      context_copy = ctxt.release();
+      return Status::Ok;
     }
 
   private:
-    Key key_;
     uint8_t* modification_;
     uint64_t length_;
     rmw_callback cb_;
     mutable uint64_t new_length_;
+    Key key_;
   };
 
   class DeleteContext : public IAsyncContext {
@@ -430,7 +467,13 @@ extern "C" {
   protected:
       /// The explicit interface requires a DeepCopy_Internal() implementation.
       Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+        context_copy = nullptr;
+        size_t extra = key_.size() - sizeof(Key);
+        auto ctxt = alloc_context<DeleteContext>(sizeof(DeleteContext) + extra);
+        if(!ctxt.get()) return Status::OutOfMemory;
+        new(ctxt.get()) DeleteContext{ *this };
+        context_copy = ctxt.release();
+        return Status::Ok;
       }
 
   private:
@@ -495,120 +538,142 @@ extern "C" {
   }
 
   faster_t* faster_open(const uint64_t table_size, const uint64_t log_size, bool pre_allocate_log = false) {
-    faster_t* res = new faster_t();
-    res->obj.null_store = new null_store_t{
-      null_store_t::IndexConfig{ table_size },
-      log_size,
-      "",
-      1.0,
-      DEFAULT_READ_CACHE_CONFIG,
-      DEFAULT_HLOG_COMPACTION_CONFIG,
-      pre_allocate_log,
-    };
-    res->type = NULL_DISK;
-    return res;
+    try {
+      faster_t* res = new faster_t();
+      res->obj.null_store = new null_store_t{
+        null_store_t::IndexConfig{ table_size },
+        log_size,
+        "",
+        1.0,
+        DEFAULT_READ_CACHE_CONFIG,
+        DEFAULT_HLOG_COMPACTION_CONFIG,
+        pre_allocate_log,
+      };
+      res->type = NULL_DISK;
+      return res;
+    } catch (...) {
+      handle_exception("faster_open", nullptr, nullptr);
+      return NULL;
+    }
   }
 
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size,
                                   const char* storage, double log_mutable_fraction = 0.9, bool pre_allocate_log = false) {
-    faster_t* res = new faster_t();
-    std::filesystem::create_directories(storage);
-    res->obj.store = new store_t{
-      store_t::IndexConfig{ table_size },
-      log_size,
-      storage,
-      log_mutable_fraction,
-      DEFAULT_READ_CACHE_CONFIG,
-      DEFAULT_HLOG_COMPACTION_CONFIG,
-      pre_allocate_log,
-    };
-    res->type = FILESYSTEM_DISK;
-    return res;
+    try {
+      faster_t* res = new faster_t();
+      std::filesystem::create_directories(storage);
+      res->obj.store = new store_t{
+        store_t::IndexConfig{ table_size },
+        log_size,
+        storage,
+        log_mutable_fraction,
+        DEFAULT_READ_CACHE_CONFIG,
+        DEFAULT_HLOG_COMPACTION_CONFIG,
+        pre_allocate_log,
+      };
+      res->type = FILESYSTEM_DISK;
+      return res;
+    } catch (...) {
+      handle_exception("faster_open_with_disk", nullptr, nullptr);
+      return NULL;
+    }
   }
 
   uint8_t faster_upsert(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                         uint8_t* value, uint64_t value_length, const uint64_t monotonic_serial_number) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      assert(result == Status::Ok);
-    };
+    try {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        assert(result == Status::Ok);
+      };
 
-    UpsertContext context { key, key_length, value, value_length };
-    Status result;
-    switch (faster_t->type) {
-      case NULL_DISK:
-        result = faster_t->obj.null_store->Upsert(context, callback, monotonic_serial_number);
-        break;
-      case FILESYSTEM_DISK:
-        result = faster_t->obj.store->Upsert(context, callback, monotonic_serial_number);
-        break;
+      UpsertContext context { key, key_length, value, value_length };
+      Status result;
+      switch (faster_t->type) {
+        case NULL_DISK:
+          result = faster_t->obj.null_store->Upsert(context, callback, monotonic_serial_number);
+          break;
+        case FILESYSTEM_DISK:
+          result = faster_t->obj.store->Upsert(context, callback, monotonic_serial_number);
+          break;
+      }
+      return static_cast<uint8_t>(result);
+    } catch (...) {
+      return handle_exception("faster_upsert", nullptr, nullptr);
     }
-    return static_cast<uint8_t>(result);
   }
 
   uint8_t faster_rmw(faster_t* faster_t, const uint8_t* key, const uint64_t key_length, uint8_t* modification,
                      const uint64_t length, const uint64_t monotonic_serial_number, rmw_callback cb) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      CallbackContext<RmwContext> context { ctxt };
-    };
+    try {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<RmwContext> context { ctxt };
+      };
 
-    RmwContext context{ key, key_length, modification, length, cb};
-    Status result;
-    switch (faster_t->type) {
-      case NULL_DISK:
-        result = faster_t->obj.null_store->Rmw(context, callback, monotonic_serial_number);
-        break;
-      case FILESYSTEM_DISK:
-        result = faster_t->obj.store->Rmw(context, callback, monotonic_serial_number);
-        break;
+      RmwContext context{ key, key_length, modification, length, cb};
+      Status result;
+      switch (faster_t->type) {
+        case NULL_DISK:
+          result = faster_t->obj.null_store->Rmw(context, callback, monotonic_serial_number);
+          break;
+        case FILESYSTEM_DISK:
+          result = faster_t->obj.store->Rmw(context, callback, monotonic_serial_number);
+          break;
+      }
+      return static_cast<uint8_t>(result);
+    } catch (...) {
+      return handle_exception("faster_rmw", nullptr, nullptr);
     }
-    return static_cast<uint8_t>(result);
   }
 
   uint8_t faster_read(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                        const uint64_t monotonic_serial_number, read_callback cb, void* target) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      CallbackContext<ReadContext> context { ctxt };
-      if (result == Status::NotFound) {
-        context->ReturnNotFound();
+    try {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<ReadContext> context { ctxt };
+        if (result == Status::NotFound) {
+          context->ReturnNotFound();
+        }
+      };
+
+      ReadContext context {key, key_length, cb, target};
+      Status result;
+      switch (faster_t->type) {
+        case NULL_DISK:
+          result = faster_t->obj.null_store->Read(context, callback, monotonic_serial_number);
+          break;
+        case FILESYSTEM_DISK:
+          result = faster_t->obj.store->Read(context, callback, monotonic_serial_number);
+          break;
       }
-    };
 
-    ReadContext context {key, key_length, cb, target};
-    Status result;
-    switch (faster_t->type) {
-      case NULL_DISK:
-        result = faster_t->obj.null_store->Read(context, callback, monotonic_serial_number);
-        break;
-      case FILESYSTEM_DISK:
-        result = faster_t->obj.store->Read(context, callback, monotonic_serial_number);
-        break;
+      return static_cast<uint8_t>(result);
+    } catch (...) {
+      return handle_exception("faster_read", cb, target);
     }
-
-    if (result == Status::NotFound) {
-      cb(target, NULL, 0, NotFound);
-    }
-
-    return static_cast<uint8_t>(result);
   }
 
   uint8_t faster_delete(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                         const uint64_t monotonic_serial_number) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      CallbackContext<DeleteContext> context { ctxt };
-      assert(result == Status::Ok || result == Status::NotFound);
-    };
+    try {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<DeleteContext> context { ctxt };
+        assert(result == Status::Ok || result == Status::NotFound);
+      };
 
-    DeleteContext context {key, key_length};
-    Status result;
-    switch (faster_t->type) {
-      case NULL_DISK:
-        result = faster_t->obj.null_store->Delete(context, callback, monotonic_serial_number);
-        break;
-      case FILESYSTEM_DISK:
-        result = faster_t->obj.store->Delete(context, callback, monotonic_serial_number);
-        break;
+      DeleteContext context {key, key_length};
+      Status result;
+      switch (faster_t->type) {
+        case NULL_DISK:
+          result = faster_t->obj.null_store->Delete(context, callback, monotonic_serial_number);
+          break;
+        case FILESYSTEM_DISK:
+          result = faster_t->obj.store->Delete(context, callback, monotonic_serial_number);
+          break;
+      }
+      return static_cast<uint8_t>(result);
+    } catch (...) {
+      return handle_exception("faster_delete", nullptr, nullptr);
     }
-    return static_cast<uint8_t>(result);
   }
 
   // It is up to the caller to dealloc faster_checkpoint_result*
@@ -636,9 +701,9 @@ extern "C" {
         break;
     }
     stop_session_if_started(faster_t, started);
-    faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
+    faster_checkpoint_result* res = faster_alloc_checkpoint_result();
     res->checked = checked;
-    res->token = (char*) malloc(37 * sizeof(char));
+    res->token = (char*) faster_alloc_vec(37);
     strncpy(res->token, token.ToString().c_str(), 37);
     return res;
   }
@@ -668,9 +733,9 @@ extern "C" {
         break;
     }
     stop_session_if_started(faster_t, started);
-    faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
+    faster_checkpoint_result* res = faster_alloc_checkpoint_result();
     res->checked = checked;
-    res->token = (char*) malloc(37 * sizeof(char));
+    res->token = (char*) faster_alloc_vec(37);
     strncpy(res->token, token.ToString().c_str(), 37);
     return res;
   }
@@ -700,9 +765,9 @@ extern "C" {
         break;
     }
     stop_session_if_started(faster_t, started);
-    faster_checkpoint_result* res = (faster_checkpoint_result*) malloc(sizeof(faster_checkpoint_result));
+    faster_checkpoint_result* res = faster_alloc_checkpoint_result();
     res->checked = checked;
-    res->token = (char*) malloc(37 * sizeof(char));
+    res->token = (char*) faster_alloc_vec(37);
     strncpy(res->token, token.ToString().c_str(), 37);
     return res;
   }
@@ -761,14 +826,14 @@ extern "C" {
       }
 
       uint8_t status_result = static_cast<uint8_t>(sres);
-      faster_recover_result* res = (faster_recover_result*) malloc(sizeof(faster_recover_result));
+      faster_recover_result* res = faster_alloc_recover_result();
       res->status= status_result;
       res->version = ver;
 
       int ids_total = _session_ids.size();
       res->session_ids_count = ids_total;
       int session_len = 37; // 36 + 1
-      res->session_ids = (char*) malloc(sizeof(char) * ids_total * session_len);
+      res->session_ids = (char*) faster_alloc_vec(sizeof(char) * ids_total * session_len);
 
       int counter = 0;
       for (auto& id : _session_ids) {
