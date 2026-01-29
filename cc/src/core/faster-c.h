@@ -48,6 +48,33 @@ extern "C" {
     char* session_ids;
   };
 
+  typedef struct faster_read_cache_config {
+    bool enabled;
+    uint64_t mem_size;
+    double mutable_fraction;
+    bool pre_allocate;
+  } faster_read_cache_config;
+
+  typedef struct faster_hlog_compaction_config {
+    bool enabled;
+    uint64_t check_interval_ms;
+    double trigger_pct;
+    double compact_pct;
+    uint64_t max_compacted_size;
+    uint64_t hlog_size_budget;
+    uint8_t num_threads;
+  } faster_hlog_compaction_config;
+
+  typedef struct faster_kv_config {
+    uint64_t table_size;
+    uint64_t log_size;
+    const char* storage;
+    double log_mutable_fraction;
+    bool pre_allocate_log;
+    faster_read_cache_config read_cache;
+    faster_hlog_compaction_config hlog_compaction;
+  } faster_kv_config;
+
   // Rust allocator helpers (implemented in faster-rs)
   uint8_t* faster_alloc_vec(uint64_t length);
   faster_checkpoint_result* faster_alloc_checkpoint_result();
@@ -71,6 +98,7 @@ extern "C" {
   faster_t* faster_open(const uint64_t table_size, const uint64_t log_size, bool pre_allocate_log);
   faster_t* faster_open_with_disk(const uint64_t table_size, const uint64_t log_size, const char* storage,
                                   double log_mutable_fraction, bool pre_allocate_log);
+  faster_t* faster_open_with_config(const faster_kv_config* config);
   uint8_t faster_upsert(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                         uint8_t* value, uint64_t value_length, const uint64_t monotonic_serial_number);
   uint8_t faster_rmw(faster_t* faster_t, const uint8_t* key, const uint64_t key_length, uint8_t* modification,

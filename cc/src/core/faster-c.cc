@@ -579,6 +579,65 @@ extern "C" {
     }
   }
 
+  faster_t* faster_open_with_config(const faster_kv_config* config) {
+    try {
+      if (config == nullptr) {
+        return NULL;
+      }
+      faster_t* res = new faster_t();
+      const bool has_storage = config->storage != nullptr && config->storage[0] != '\0';
+
+      ReadCacheConfig read_cache = DEFAULT_READ_CACHE_CONFIG;
+      if (config->read_cache.enabled) {
+        read_cache.enabled = true;
+        read_cache.mem_size = config->read_cache.mem_size;
+        read_cache.mutable_fraction = config->read_cache.mutable_fraction;
+        read_cache.pre_allocate = config->read_cache.pre_allocate;
+      }
+
+      HlogCompactionConfig hlog_compaction = DEFAULT_HLOG_COMPACTION_CONFIG;
+      if (config->hlog_compaction.enabled) {
+        hlog_compaction.enabled = true;
+        hlog_compaction.check_interval = std::chrono::milliseconds(config->hlog_compaction.check_interval_ms);
+        hlog_compaction.trigger_pct = config->hlog_compaction.trigger_pct;
+        hlog_compaction.compact_pct = config->hlog_compaction.compact_pct;
+        hlog_compaction.max_compacted_size = config->hlog_compaction.max_compacted_size;
+        hlog_compaction.hlog_size_budget = config->hlog_compaction.hlog_size_budget;
+        hlog_compaction.num_threads = config->hlog_compaction.num_threads;
+      }
+
+      if (has_storage) {
+        std::filesystem::create_directories(config->storage);
+        res->obj.store = new store_t{
+          store_t::IndexConfig{ config->table_size },
+          config->log_size,
+          config->storage,
+          config->log_mutable_fraction,
+          read_cache,
+          hlog_compaction,
+          config->pre_allocate_log,
+        };
+        res->type = FILESYSTEM_DISK;
+        return res;
+      }
+
+      res->obj.null_store = new null_store_t{
+        null_store_t::IndexConfig{ config->table_size },
+        config->log_size,
+        "",
+        config->log_mutable_fraction,
+        read_cache,
+        hlog_compaction,
+        config->pre_allocate_log,
+      };
+      res->type = NULL_DISK;
+      return res;
+    } catch (...) {
+      handle_exception("faster_open_with_config", nullptr, nullptr);
+      return NULL;
+    }
+  }
+
   uint8_t faster_upsert(faster_t* faster_t, const uint8_t* key, const uint64_t key_length,
                         uint8_t* value, uint64_t value_length, const uint64_t monotonic_serial_number) {
     try {
