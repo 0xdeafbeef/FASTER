@@ -112,6 +112,16 @@ extern "C" {
 
   // Statistics
   uint64_t faster_size(faster_t* faster_t);
+  uint32_t faster_num_active_sessions(faster_t* faster_t);
+  bool faster_auto_compaction_scheduled(faster_t* faster_t);
+  bool faster_hlog_max_size_reached(faster_t* faster_t);
+  uint64_t faster_hlog_begin_address(faster_t* faster_t);
+  uint64_t faster_hlog_tail_address(faster_t* faster_t);
+  uint64_t faster_hlog_head_address(faster_t* faster_t);
+  uint64_t faster_hlog_safe_head_address(faster_t* faster_t);
+  uint64_t faster_hlog_read_only_address(faster_t* faster_t);
+  uint64_t faster_hlog_safe_read_only_address(faster_t* faster_t);
+  uint64_t faster_hlog_flushed_until_address(faster_t* faster_t);
   void faster_dump_distribution(faster_t* faster_t);
 
 #ifdef __cplusplus

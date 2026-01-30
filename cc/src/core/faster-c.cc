@@ -861,6 +861,136 @@ extern "C" {
     }
   }
 
+  uint32_t faster_num_active_sessions(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->NumActiveSessions();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->NumActiveSessions();
+    }
+    return 0;
+  }
+
+  bool faster_auto_compaction_scheduled(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return false;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->AutoCompactionScheduled();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->AutoCompactionScheduled();
+    }
+    return false;
+  }
+
+  bool faster_hlog_max_size_reached(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return false;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->HlogMaxSizeReached();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->HlogMaxSizeReached();
+    }
+    return false;
+  }
+
+  uint64_t faster_hlog_begin_address(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->hlog.begin_address.load().control();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->hlog.begin_address.load().control();
+    }
+    return 0;
+  }
+
+  uint64_t faster_hlog_tail_address(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->hlog.GetTailAddress().control();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->hlog.GetTailAddress().control();
+    }
+    return 0;
+  }
+
+  uint64_t faster_hlog_head_address(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->hlog.head_address.load().control();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->hlog.head_address.load().control();
+    }
+    return 0;
+  }
+
+  uint64_t faster_hlog_safe_head_address(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->hlog.safe_head_address.load().control();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->hlog.safe_head_address.load().control();
+    }
+    return 0;
+  }
+
+  uint64_t faster_hlog_read_only_address(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->hlog.read_only_address.load().control();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->hlog.read_only_address.load().control();
+    }
+    return 0;
+  }
+
+  uint64_t faster_hlog_safe_read_only_address(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->hlog.safe_read_only_address.load().control();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->hlog.safe_read_only_address.load().control();
+    }
+    return 0;
+  }
+
+  uint64_t faster_hlog_flushed_until_address(faster_t* faster_t) {
+    if (faster_t == NULL) {
+      return 0;
+    }
+    switch (faster_t->type) {
+      case NULL_DISK:
+        return faster_t->obj.null_store->hlog.flushed_until_address.load().control();
+      case FILESYSTEM_DISK:
+        return faster_t->obj.store->hlog.flushed_until_address.load().control();
+    }
+    return 0;
+  }
+
   // It is up to the caller to deallocate the faster_recover_result* struct
   faster_recover_result* faster_recover(faster_t* faster_t, const char* index_token, const char* hybrid_log_token) {
     if (faster_t == NULL) {
