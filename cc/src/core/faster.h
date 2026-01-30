@@ -4470,6 +4470,14 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
     }
     auto_compaction_scheduled_.store(true);
 
+    // Starting or stopping sessions is only valid in the global REST phase. Auto-compaction can
+    // race with checkpoint/GC actions, so skip compaction while we're in a special phase.
+    SystemState state = system_state_.load();
+    if (state.phase != Phase::REST) {
+      std::this_thread::sleep_for(hlog_compaction_config_.check_interval);
+      continue;
+    }
+
     uint64_t begin_address = hlog.begin_address.control();
 
     /// calculate until address
@@ -4488,9 +4496,26 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
     log_info("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
              begin_address, hlog.GetTailAddress(),
              until_address, hlog.GetTailAddress(), Size());
-    StartSession();
-    bool success = CompactWithLookup(until_address, true, hlog_compaction_config_.num_threads);
-    StopSession();
+    bool session_started = false;
+    bool success = false;
+    try {
+      StartSession();
+      session_started = true;
+      success = CompactWithLookup(until_address, true, hlog_compaction_config_.num_threads);
+      StopSession();
+      session_started = false;
+    } catch (const std::exception& e) {
+      log_warn("Auto-compaction: failed to start/execute compaction (%s) -- retry!", e.what());
+      if (session_started) {
+        try {
+          StopSession();
+        } catch (...) {
+          // best-effort cleanup; keep compaction thread alive
+        }
+      }
+      std::this_thread::sleep_for(hlog_compaction_config_.check_interval);
+      continue;
+    }
 
     log_info("Auto-compaction: Size: %.3f GB", static_cast<double>(Size()) / (1 << 30));
     if (!success) {
